@@ -1,0 +1,61 @@
+# Challenge Toolkit v2 - Configuration
+
+# Parser settings
+parser:
+  default_separator: ","
+  default_encoding: "utf-8"
+  expected_columns:
+    - ipsrc
+    - ipdst
+    - portdst
+    - proto
+    - action
+    - date
+    - regle
+
+# Feature engineering settings
+features:
+  admin_ports:
+    - 21
+    - 22
+    - 23
+    - 3389
+    - 3306
+    - 5432
+    - 1433
+    - 445
+    - 139
+  port_threshold: 1024
+  include_time_features: true
+  include_ratio_features: true
+  include_statistical_features: true
+
+# Model settings
+model:
+  random_state: 42
+  positive_label: "positif"
+  negative_label: "negatif"
+  target_column: "risque"
+  default_cv_folds: 5
+  default_model: "logistic_regression"
+
+# Application settings
+app:
+  title: "CyberSec ML Toolkit"
+  theme: "dark"
+  page_icon: "lock"
+  layout: "wide"
+  max_upload_size_mb: 200
+
+# Logging settings
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_file: null  # Set to path for file logging
+
+# Output paths
+output:
+  features_dir: "output/features"
+  models_dir: "output/models"
+  reports_dir: "output/reports"
+  predictions_dir: "output/predictions"
