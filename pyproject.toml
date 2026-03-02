@@ -5,9 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "ipykernel>=7.2.0",
+    "jupyter-client>=8.8.0",
+    "jupyter-core>=5.9.1",
     "matplotlib>=3.10.8",
     "mistralai>=1.12.4",
+    "plotly>=6.5.2",
     "python-dotenv>=1.2.2",
     "seaborn>=0.13.2",
+    "streamlit>=1.54.0",
     "umap-learn>=0.5.11",
 ]
