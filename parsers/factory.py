@@ -12,6 +12,7 @@ from core.exceptions import ConfigurationError
 from .firewall import FirewallParser
 from .generic import GenericCSVParser
 from .syslog import SyslogParser
+from .kernel_firewall import KernelFirewallParser
 
 
 class ParserFactory:
@@ -21,9 +22,10 @@ class ParserFactory:
     """
 
     _parsers: Dict[str, Type[Parser]] = {
-        'firewall': FirewallParser,
-        'csv': GenericCSVParser,
-        'syslog': SyslogParser,
+        "firewall": FirewallParser,
+        "csv": GenericCSVParser,
+        "syslog": SyslogParser,
+        "kernel_firewall": KernelFirewallParser,
     }
 
     @classmethod
