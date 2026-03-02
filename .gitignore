@@ -216,3 +216,5 @@ claude.md
 
 # Parquet files
 *.parquet
+test_parquet_data.ipynb
+PLAN.md
