@@ -7,7 +7,19 @@ A modular toolkit for cybersecurity log analysis and ML-based threat detection.
 
 import streamlit as st
 from app.state import get_state
-from app.pages import data_upload, feature_engineering, model_training, predictions, analysis, dim_reduction, llm_assistant
+from app.pages import (
+    data_upload,
+    feature_engineering,
+    model_training,
+    predictions,
+    analysis,
+    dim_reduction,
+    llm_assistant,
+    flow_analysis,
+    statistics,
+    data_browser,
+    ip_visualization,
+)
 
 
 def main():
@@ -31,6 +43,10 @@ def main():
             "Navigation",
             [
                 "Data Upload",
+                "Data Browser",
+                "Flow Analysis",
+                "IP Visualization",
+                "Statistics",
                 "Feature Engineering",
                 "Model Training",
                 "Predictions",
@@ -46,6 +62,14 @@ def main():
     # Route to selected page
     if page == "Data Upload":
         data_upload.render()
+    elif page == "Data Browser":
+        data_browser.render()
+    elif page == "Flow Analysis":
+        flow_analysis.render()
+    elif page == "IP Visualization":
+        ip_visualization.render()
+    elif page == "Statistics":
+        statistics.render()
     elif page == "Feature Engineering":
         feature_engineering.render()
     elif page == "Model Training":
@@ -84,11 +108,19 @@ def render_sidebar_status():
     else:
         st.info("No features generated")
 
-    # Model status
+    # Model status (supervised)
     if state.has_trained_model():
-        st.success("Model trained")
+        st.success("Supervised model trained")
     else:
-        st.info("No model trained")
+        st.info("No supervised model")
+
+    # Unsupervised results
+    if state.has_unsupervised_results():
+        unsup = state.unsupervised_results
+        unsup_type = unsup.get('type', 'unknown')
+        st.success(f"Unsupervised: {unsup_type}")
+    else:
+        st.info("No unsupervised results")
 
     # Predictions status
     if state.has_predictions():

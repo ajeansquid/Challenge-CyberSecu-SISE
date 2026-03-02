@@ -6,12 +6,35 @@ High-level feature extraction pipelines.
 """
 
 import pandas as pd
-from typing import List, Optional
+from typing import List, Optional, Tuple
+import logging
 
 from core.interfaces import FeatureExtractor, FeatureSet
 from core.config import get_config
 from .aggregators import IPAggregator, TimeAggregator, StatisticalAggregator
 from .transformers import RatioTransformer
+
+logger = logging.getLogger(__name__)
+
+
+def _remove_constant_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Remove features with zero variance (constant values).
+
+    Args:
+        df: Feature DataFrame
+
+    Returns:
+        Tuple of (cleaned DataFrame, list of removed column names)
+    """
+    variances = df.var()
+    constant_cols = variances[variances == 0].index.tolist()
+
+    if constant_cols:
+        logger.warning(f"Removing constant features (zero variance): {constant_cols}")
+        df = df.drop(columns=constant_cols)
+
+    return df, constant_cols
 
 
 class CourseFeatureExtractor(FeatureExtractor):
@@ -20,9 +43,9 @@ class CourseFeatureExtractor(FeatureExtractor):
     """
 
     FEATURE_NAMES = [
-        'nombre', 'cnbripdst', 'cnportdst',
-        'permit', 'inf1024permit', 'sup1024permit', 'adminpermit',
-        'deny', 'inf1024deny', 'sup1024deny', 'admindeny'
+        'total_flows', 'unique_dst_ips', 'unique_dst_ports',
+        'permit', 'permit_low_port', 'permit_high_port', 'permit_admin',
+        'deny', 'deny_low_port', 'deny_high_port', 'deny_admin'
     ]
 
     def __init__(self):
@@ -54,7 +77,7 @@ class CourseFeatureExtractor(FeatureExtractor):
             action_col: Action column
 
         Returns:
-            FeatureSet with 11 course features
+            FeatureSet with 11 course features (minus any constant features)
         """
         features = self._aggregator.aggregate(
             df, ip_col, dst_col, port_col, action_col
@@ -68,11 +91,18 @@ class CourseFeatureExtractor(FeatureExtractor):
         # Reorder columns
         features = features[self.FEATURE_NAMES]
 
+        # Remove constant features
+        features, removed = _remove_constant_features(features)
+        final_feature_names = [f for f in self.FEATURE_NAMES if f not in removed]
+
         return FeatureSet(
             data=features,
-            feature_names=self.FEATURE_NAMES,
+            feature_names=final_feature_names,
             index_column=ip_col,
-            metadata={'extractor': self.name}
+            metadata={
+                'extractor': self.name,
+                'removed_constant_features': removed
+            }
         )
 
 
@@ -151,6 +181,8 @@ class FullFeatureExtractor(FeatureExtractor):
             )
             result = result.join(stat_features)
 
+        # Remove constant features
+        result, removed = _remove_constant_features(result)
         self._feature_names = list(result.columns)
 
         return FeatureSet(
@@ -161,7 +193,8 @@ class FullFeatureExtractor(FeatureExtractor):
                 'extractor': self.name,
                 'include_time': self.include_time,
                 'include_ratios': self.include_ratios,
-                'include_stats': self.include_stats
+                'include_stats': self.include_stats,
+                'removed_constant_features': removed
             }
         )
 
@@ -172,7 +205,7 @@ class SimpleFeatureExtractor(FeatureExtractor):
     As recommended in course for cleaner models.
     """
 
-    FEATURE_NAMES = ['nombre', 'cnbripdst', 'cnportdst']
+    FEATURE_NAMES = ['total_flows', 'unique_dst_ips', 'unique_dst_ports']
 
     def __init__(self):
         self._aggregator = IPAggregator()
@@ -198,11 +231,18 @@ class SimpleFeatureExtractor(FeatureExtractor):
         )
 
         # Keep only simple features
-        simple = features[['nombre', 'cnbripdst', 'cnportdst']]
+        simple = features[['total_flows', 'unique_dst_ips', 'unique_dst_ports']]
+
+        # Remove constant features
+        simple, removed = _remove_constant_features(simple)
+        final_feature_names = [f for f in self.FEATURE_NAMES if f not in removed]
 
         return FeatureSet(
             data=simple,
-            feature_names=self.FEATURE_NAMES,
+            feature_names=final_feature_names,
             index_column=ip_col,
-            metadata={'extractor': self.name}
+            metadata={
+                'extractor': self.name,
+                'removed_constant_features': removed
+            }
         )

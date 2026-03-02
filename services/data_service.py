@@ -12,6 +12,7 @@ from typing import Optional, Tuple, List, Dict, Any
 from core.exceptions import ValidationError, ServiceError
 from core.config import get_config
 from parsers import ParserFactory, FirewallParser
+from utils.io import load_parquet
 
 
 class DataService:
@@ -52,6 +53,45 @@ class DataService:
                 f"Data validation failed: {errors}",
                 errors=errors
             )
+
+        self._loaded_data['raw_logs'] = df
+        return df
+
+    def load_parquet_file(
+        self,
+        source: str,
+        drop_cols: Optional[List[str]] = None,
+        date_filter: Optional[tuple] = None,
+        date_col: str = "timestamp",
+    ) -> pd.DataFrame:
+        """
+        Load a pre-processed Parquet file (e.g. produced by 00_transform_raw_data).
+
+        Args:
+            source: Path to the ``.parquet`` file.
+            drop_cols: Optional list of columns to drop after loading (e.g. ``["fw"]``).
+            date_filter: Optional ``(date_from, date_to)`` tuple of strings
+                ``"YYYY-MM-DD"`` to keep only rows in that range.
+            date_col: Name of the datetime column used for filtering
+                (default ``"timestamp"``).
+
+        Returns:
+            Parsed DataFrame.
+        """
+        path = Path(source)
+        if not path.exists():
+            raise ServiceError(f"Parquet file not found: {source}", "data_service")
+
+        df = load_parquet(path)
+
+        if drop_cols:
+            df = df.drop(columns=[c for c in drop_cols if c in df.columns])
+
+        if date_filter is not None:
+            date_from, date_to = date_filter
+            if date_col in df.columns:
+                mask = (df[date_col] >= date_from) & (df[date_col] <= date_to)
+                df = df.loc[mask].reset_index(drop=True)
 
         self._loaded_data['raw_logs'] = df
         return df

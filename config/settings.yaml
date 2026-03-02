@@ -33,11 +33,11 @@ features:
 # Model settings
 model:
   random_state: 42
-  positive_label: "positif"
-  negative_label: "negatif"
-  target_column: "risque"
+  positive_label: "positive"
+  negative_label: "negative"
+  target_column: "risk"
   default_cv_folds: 5
-  default_model: "logistic_regression"
+  default_model: "isolation_forest"  # Default to unsupervised since no labels
 
 # Application settings
 app:

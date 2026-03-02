@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.log
+plan.md
+CLAUDE.md
+
+# Large data files - mount as volume instead
+data/raw_data/
+data/clean_data/logs_export.parquet
+data/clean_data/log_export.log
+data/clean_data/firewall_sample.parquet
+
+# Keep only logs_parsed.parquet (99MB) which the app needs

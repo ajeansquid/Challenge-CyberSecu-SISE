@@ -15,9 +15,14 @@ def render():
     state = get_state()
 
     st.title("Predictions")
+    st.caption("**Supervised Predictions** — uses a trained classifier model")
 
     if not state.has_trained_model():
-        st.warning("Please train a model first.")
+        st.warning(
+            "**No trained model.** Train a supervised classifier in Model Training first.\n\n"
+            "For **unsupervised detection** (no labels needed), use:\n"
+            "- **Feature Engineering** → **Analysis Dashboard** → Anomaly Detection tab"
+        )
         return
 
     tab_single, tab_batch = st.tabs(["🔍 Single Prediction", "📦 Batch Predictions"])
@@ -76,7 +81,7 @@ def render_single_prediction(state):
             pred = result.predictions[0]
             proba = float(result.probabilities[0]) if result.probabilities is not None else None
 
-            positive_label = st.session_state.get('positive_label', 'positif')
+            positive_label = st.session_state.get('positive_label', 'positive')
             is_threat = pred == positive_label
 
             if is_threat:
@@ -140,7 +145,7 @@ def render_results_section(state):
     st.header("Results")
 
     results = state.predictions
-    positive_label = st.session_state.get('positive_label', 'positif')
+    positive_label = st.session_state.get('positive_label', 'positive')
 
     # Metrics
     cols = st.columns(3)

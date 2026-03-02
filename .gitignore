@@ -218,3 +218,4 @@ claude.md
 *.parquet
 test_parquet_data.ipynb
 PLAN.md
+docs/llm_interpretation.md

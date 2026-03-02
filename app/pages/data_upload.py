@@ -7,6 +7,7 @@ import tempfile
 import plotly.express as px
 
 from app.state import get_state
+from utils.helpers import normalize_feature_names
 
 
 def render():
@@ -15,15 +16,18 @@ def render():
 
     st.title("Data Upload & Exploration")
 
-    tab1, tab2, tab3 = st.tabs(["Upload", "Preview", "Statistics"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Upload CSV/TXT", "Upload Parquet", "Preview", "Statistics"])
 
     with tab1:
         render_upload_section(state)
 
     with tab2:
-        render_preview_section(state)
+        render_parquet_upload_section(state)
 
     with tab3:
+        render_preview_section(state)
+
+    with tab4:
         render_stats_section(state)
 
 
@@ -85,6 +89,7 @@ def render_upload_section(state):
 
                     if load_as.startswith("Labeled"):
                         df = state.data_service.load_labeled_data(temp_path)
+                        df = normalize_feature_names(df)  # Map French → English
                         state.labeled_data = df
                         st.success(f"Loaded {len(df)} labeled samples!")
                     else:
@@ -97,6 +102,53 @@ def render_upload_section(state):
                         st.success(f"Loaded {len(df)} rows as raw data!")
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+
+def render_parquet_upload_section(state):
+    """Upload and load a pre-processed Parquet file (e.g. from 00_transform_raw_data)."""
+    st.subheader("Parquet – logs pré-traités")
+    st.caption(
+        "Charger un fichier `.parquet` produit par le notebook `00_transform_raw_data` "
+        "(via `KernelFirewallParser` + `save_parquet`)."
+    )
+
+    parquet_file = st.file_uploader(
+        "Fichier Parquet",
+        type=["parquet"],
+        key="parquet_upload",
+    )
+
+    if parquet_file:
+        with st.expander("Options (optionnel)"):
+            col1, col2 = st.columns(2)
+            with col1:
+                date_from = st.text_input("Date début (YYYY-MM-DD)", value="", key="pq_date_from")
+                date_to   = st.text_input("Date fin   (YYYY-MM-DD)", value="", key="pq_date_to")
+            with col2:
+                drop_fw = st.checkbox("Supprimer colonne `fw`", value=True, key="pq_drop_fw")
+
+        if st.button("Charger le Parquet", key="load_parquet_btn"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as f:
+                f.write(parquet_file.getvalue())
+                temp_path = f.name
+
+            try:
+                drop_cols   = ["fw"] if drop_fw else None
+                date_filter = (date_from, date_to) if date_from and date_to else None
+
+                df = state.data_service.load_parquet_file(
+                    temp_path,
+                    drop_cols=drop_cols,
+                    date_filter=date_filter,
+                )
+                state.raw_data = df
+                st.success(
+                    f"✅ {len(df):,} lignes chargées — {len(df.columns)} colonnes : "
+                    f"{', '.join(df.columns.tolist())}"
+                )
+                st.dataframe(df.head(10))
+            except Exception as e:
+                st.error(f"Erreur : {e}")
 
 
 def render_preview_section(state):
@@ -128,8 +180,8 @@ def render_stats_section(state):
         cols[2].metric("Columns", len(df.columns))
 
         if 'action' in df.columns:
-            deny_pct = (df['action'] == 'Deny').mean() * 100
-            cols[3].metric("Deny Rate", f"{deny_pct:.1f}%")
+            deny_pct = (df['action'] == 'DENY').mean() * 100
+            cols[3].metric("DENY Rate", f"{deny_pct:.1f}%")
 
             fig = px.pie(df, names='action', title='Action Distribution')
             st.plotly_chart(fig)
@@ -138,14 +190,14 @@ def render_stats_section(state):
         df = state.labeled_data
         st.subheader("Labeled Data Statistics")
 
-        if 'risque' in df.columns:
+        if 'risk' in df.columns:
             col1, col2 = st.columns(2)
             with col1:
                 fig = px.pie(
-                    df, names='risque', title='Risk Distribution',
-                    color_discrete_map={'positif': 'red', 'negatif': 'green'}
+                    df, names='risk', title='Risk Distribution',
+                    color_discrete_map={'positive': 'red', 'negative': 'green'}
                 )
                 st.plotly_chart(fig)
             with col2:
                 st.write("Class Distribution:")
-                st.write(df['risque'].value_counts())
+                st.write(df['risk'].value_counts())

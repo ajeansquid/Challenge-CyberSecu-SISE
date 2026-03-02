@@ -19,7 +19,7 @@ class ModelComparator:
     Compare multiple models on the same dataset.
     """
 
-    def __init__(self, positive_label: str = 'positif'):
+    def __init__(self, positive_label: str = 'positive'):
         self.positive_label = positive_label
         self._metrics = MetricsCalculator(positive_label)
         self._plotter = EvaluationPlotter(positive_label)

@@ -2,10 +2,13 @@
 """Feature Engineering Page"""
 
 import streamlit as st
+import pandas as pd
 import plotly.express as px
 import numpy as np
 
 from app.state import get_state
+from utils.helpers import normalize_log_columns
+from core.interfaces import FeatureSet
 
 
 def render():
@@ -38,9 +41,9 @@ def render():
             ["Raw logs", "Labeled data"],
             horizontal=True,
         )
-        input_df = state.raw_data if source == "Raw logs" else state.labeled_data
+        input_df = normalize_log_columns(state.raw_data.copy()) if source == "Raw logs" else state.labeled_data
     elif has_raw:
-        input_df = state.raw_data
+        input_df = normalize_log_columns(state.raw_data.copy())
         st.info("Using raw logs as input.")
     else:
         input_df = state.labeled_data
@@ -50,6 +53,35 @@ def render():
 
     if state.has_features():
         render_features_section(state)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_extract_features(
+    df: pd.DataFrame,
+    ip_col: str,
+    dst_col: str,
+    port_col: str,
+    action_col: str,
+    date_col,
+    include_time: bool,
+    include_ratios: bool,
+    include_stats: bool,
+) -> FeatureSet:
+    """Cached wrapper so repeated UI interactions don't re-run extraction."""
+    from services import FeatureService
+    svc = FeatureService()
+    return svc.extract_full_features(
+        df,
+        ip_col=ip_col,
+        dst_col=dst_col,
+        port_col=port_col,
+        action_col=action_col,
+        date_col=date_col,
+        include_time=include_time,
+        include_ratios=include_ratios,
+        include_stats=include_stats,
+        save_as=None,
+    )
 
 
 def render_config_section(state, df):
@@ -67,33 +99,51 @@ def render_config_section(state, df):
 
     with col2:
         st.subheader("Column Mapping")
-        ip_col = st.selectbox("Source IP", df.columns, index=0)
-        dst_col = st.selectbox("Destination IP", df.columns, index=min(1, len(df.columns)-1))
-        port_col = st.selectbox("Port", df.columns, index=min(2, len(df.columns)-1))
-        action_col = st.selectbox("Action", df.columns, index=min(4, len(df.columns)-1))
-        date_col = st.selectbox("Date", ['None'] + list(df.columns))
+        cols_list = list(df.columns)
+
+        # Find canonical column indices with fallbacks
+        def find_col_idx(preferred, fallback_idx=0):
+            if preferred in cols_list:
+                return cols_list.index(preferred)
+            return min(fallback_idx, len(cols_list) - 1)
+
+        ip_col = st.selectbox("Source IP", cols_list, index=find_col_idx('ipsrc', 0))
+        dst_col = st.selectbox("Destination IP", cols_list, index=find_col_idx('ipdst', 1))
+        port_col = st.selectbox("Port", cols_list, index=find_col_idx('portdst', 2))
+        action_col = st.selectbox("Action", cols_list, index=find_col_idx('action', 4))
+        date_col = st.selectbox("Date", ['None'] + cols_list,
+                                 index=cols_list.index('date') + 1 if 'date' in cols_list else 0)
 
     if st.button("Generate Features", type="primary"):
-        try:
-            feature_set = state.feature_service.extract_full_features(
-                df,
-                ip_col=ip_col,
-                dst_col=dst_col,
-                port_col=port_col,
-                action_col=action_col,
-                date_col=date_col if date_col != 'None' else None,
-                include_time=include_time,
-                include_ratios=include_ratios,
-                include_stats=include_stats,
-                save_as='generated'
-            )
-            state.features_data = feature_set.data
-            st.success(
-                f"Generated {len(feature_set.feature_names)} features "
-                f"for {len(feature_set.data)} IPs!"
-            )
-        except Exception as e:
-            st.error(f"Error: {e}")
+        with st.spinner("Extracting features — this may take a moment for large datasets…"):
+            try:
+                feature_set = _cached_extract_features(
+                    df,
+                    ip_col=ip_col,
+                    dst_col=dst_col,
+                    port_col=port_col,
+                    action_col=action_col,
+                    date_col=date_col if date_col != 'None' else None,
+                    include_time=include_time,
+                    include_ratios=include_ratios,
+                    include_stats=include_stats,
+                )
+                state.features_data = feature_set.data
+
+                # Check for removed constant features
+                removed = feature_set.metadata.get('removed_constant_features', [])
+                if removed:
+                    st.warning(
+                        f"Removed {len(removed)} constant feature(s) (zero variance): "
+                        f"{', '.join(removed)}"
+                    )
+
+                st.success(
+                    f"Generated {len(feature_set.feature_names)} features "
+                    f"for {len(feature_set.data)} IPs!"
+                )
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 
 def render_features_section(state):

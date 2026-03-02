@@ -127,10 +127,10 @@ def _render_interpreter(state):
                 You are a senior cybersecurity data analyst.
                 You are given summary statistics of a dataset derived from firewall logs.
                 The 11 course-standard features per source IP are:
-                nombre (total accesses), cnbripdst (unique dest IPs), cnportdst (unique dest ports),
-                permit, inf1024permit, sup1024permit, adminpermit,
-                deny, inf1024deny, sup1024deny, admindeny.
-                'risque' is the binary label: positif = threat, negatif = benign.
+                total_flows (total accesses), unique_dst_ips (unique dest IPs), unique_dst_ports (unique dest ports),
+                permit, permit_low_port, permit_high_port, permit_admin,
+                deny, deny_low_port, deny_high_port, deny_admin.
+                'risk' is the binary label: positive = threat, negative = benign.
                 Provide clear, actionable analysis in Markdown. Use bullet points.
             """)
             if focus == "Custom prompt…":
@@ -304,7 +304,7 @@ def _dataframe_summary(df: pd.DataFrame, max_rows: int = 5) -> str:
     buf.write(df.head(max_rows).to_string())
 
     # If classification labels present, add class balance
-    for col in ("risque", "prediction"):
+    for col in ("risk", "prediction"):
         if col in df.columns:
             buf.write(f"\n\nValue counts ({col}):\n")
             buf.write(df[col].value_counts().to_string())

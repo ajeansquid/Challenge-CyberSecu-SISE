@@ -34,8 +34,8 @@ class ModelConfig:
     """Configuration for ML models."""
     random_state: int = 42
     default_cv_folds: int = 5
-    positive_label: str = "positif"
-    target_column: str = "risque"
+    positive_label: str = "positive"
+    target_column: str = "risk"
 
 
 @dataclass

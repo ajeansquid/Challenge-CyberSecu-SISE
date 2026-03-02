@@ -41,6 +41,7 @@ class AppState:
             'labeled_data': None,
             'predictions': None,
             'training_results': None,
+            'unsupervised_results': None,
         }
         for key, default in defaults.items():
             if key not in st.session_state:
@@ -104,6 +105,14 @@ class AppState:
     def training_results(self, value: Dict):
         st.session_state.training_results = value
 
+    @property
+    def unsupervised_results(self) -> Optional[Dict]:
+        return st.session_state.get('unsupervised_results')
+
+    @unsupervised_results.setter
+    def unsupervised_results(self, value: Dict):
+        st.session_state.unsupervised_results = value
+
     # Status checks
     def has_raw_data(self) -> bool:
         return self.raw_data is not None
@@ -119,6 +128,9 @@ class AppState:
 
     def has_predictions(self) -> bool:
         return self.predictions is not None
+
+    def has_unsupervised_results(self) -> bool:
+        return self.unsupervised_results is not None
 
     def get_status(self) -> Dict[str, bool]:
         """Get status of all data/model states."""

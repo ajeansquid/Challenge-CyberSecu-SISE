@@ -22,13 +22,13 @@ def render():
     df = None
     if state.has_labeled_data():
         df = state.labeled_data.copy()
-        st.info("Analyzing labeled data")
+        st.info("Analyzing labeled data (supervised workflow available)")
         if state.has_predictions() and 'prediction' in state.predictions.columns:
             pred_series = state.predictions['prediction'].reindex(df.index)
             df['prediction'] = pred_series
     elif state.has_features():
         df = state.features_data.copy()
-        st.info("Analyzing feature data")
+        st.info("Analyzing feature data — use **Clustering** and **Anomaly Detection** tabs for unsupervised analysis")
         if state.has_predictions() and 'prediction' in state.predictions.columns:
             pred_series = state.predictions['prediction'].reindex(df.index)
             df['prediction'] = pred_series
@@ -36,7 +36,11 @@ def render():
         df = state.predictions
         st.info("Analyzing prediction results")
     else:
-        st.warning("No data available for analysis.")
+        st.warning(
+            "No data available for analysis. Use one of these workflows:\n"
+            "- **Unsupervised**: Data Upload → Feature Engineering → Analysis Dashboard\n"
+            "- **Supervised**: Load labeled data with 'risk' column → Model Training → Predictions"
+        )
         return
 
     render_overview(df)
@@ -64,12 +68,12 @@ def render_overview(df):
     cols = st.columns(4)
     cols[0].metric("Total IPs", len(df))
 
-    if 'nombre' in df.columns:
-        cols[1].metric("Total Accesses", f"{df['nombre'].sum():,}")
+    if 'total_flows' in df.columns:
+        cols[1].metric("Total Accesses", f"{df['total_flows'].sum():,}")
     if 'deny' in df.columns:
         cols[2].metric("Total Denies", f"{df['deny'].sum():,}")
     if 'prediction' in df.columns:
-        pos = (df['prediction'] == 'positif').sum()
+        pos = (df['prediction'] == 'positive').sum()
         cols[3].metric("Threats", pos)
 
 
@@ -94,8 +98,8 @@ def render_distribution(df):
     class_col = None
     if 'prediction' in df.columns:
         class_col = 'prediction'
-    elif 'risque' in df.columns:
-        class_col = 'risque'
+    elif 'risk' in df.columns:
+        class_col = 'risk'
 
     if class_col:
         st.subheader(f"By {class_col}")
@@ -114,24 +118,56 @@ def render_correlation(df):
     selected = st.multiselect("Features", numeric_cols, default=numeric_cols[:8])
 
     if len(selected) >= 2:
-        corr = df[selected].corr()
+        # Filter out constant columns (zero variance) which cause NaN correlations
+        df_selected = df[selected].copy()
+        variances = df_selected.var()
+        constant_cols = variances[variances == 0].index.tolist()
+        valid_cols = [c for c in selected if c not in constant_cols]
+
+        if constant_cols:
+            st.warning(f"Excluded constant columns (zero variance): {', '.join(constant_cols)}")
+
+        if len(valid_cols) < 2:
+            st.error("Need at least 2 non-constant columns for correlation analysis.")
+            return
+
+        # Compute correlation on valid columns only
+        corr = df[valid_cols].corr()
+
+        # Replace any remaining NaN with 0 for display
+        corr = corr.fillna(0)
+
         fig = px.imshow(
             corr, title="Correlation Matrix",
-            color_continuous_scale='RdBu_r', text_auto='.2f'
+            color_continuous_scale='RdBu_r', text_auto='.2f',
+            zmin=-1, zmax=1
         )
         st.plotly_chart(fig)
+
+        # Show highly correlated pairs (excluding diagonal)
+        if st.checkbox("Show highly correlated pairs (|r| > 0.8)"):
+            pairs = []
+            for i, col1 in enumerate(valid_cols):
+                for col2 in valid_cols[i+1:]:
+                    r = corr.loc[col1, col2]
+                    if abs(r) > 0.8:
+                        pairs.append({'Feature 1': col1, 'Feature 2': col2, 'Correlation': f"{r:.3f}"})
+            if pairs:
+                st.dataframe(pairs, width='stretch')
+            else:
+                st.info("No highly correlated pairs found.")
 
         # Scatter
         st.subheader("Scatter Plot")
         col1, col2 = st.columns(2)
-        x_feat = col1.selectbox("X", selected, key='scatter_x')
-        y_feat = col2.selectbox("Y", selected, index=1, key='scatter_y')
+        x_feat = col1.selectbox("X", valid_cols, key='scatter_x')
+        y_feat = col2.selectbox("Y", valid_cols, index=min(1, len(valid_cols)-1), key='scatter_y')
 
         color_by = None
         if 'prediction' in df.columns:
             color_by = 'prediction'
-        elif 'risque' in df.columns:
-            color_by = 'risque'
+        elif 'risk' in df.columns:
+            color_by = 'risk'
 
         df_plot = df.reset_index(drop=True)
         fig = px.scatter(
@@ -147,7 +183,7 @@ def render_clustering(state, df):
     st.header("Clustering")
 
     numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
-    default_feats = ['nombre', 'cnbripdst', 'cnportdst']
+    default_feats = ['total_flows', 'unique_dst_ips', 'unique_dst_ports']
     default = [f for f in default_feats if f in numeric_cols] or numeric_cols[:3]
 
     features = st.multiselect("Features", numeric_cols, default=default, key='cluster_feats')

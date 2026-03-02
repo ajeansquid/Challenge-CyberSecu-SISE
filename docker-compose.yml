@@ -1,0 +1,17 @@
+# Docker Compose for CyberSec ML Toolkit
+# Challenge SISE-OPSIE 2026
+
+services:
+  cybersec-toolkit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount data directory for persistence
+      - ./data:/app/data
+    environment:
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_ENABLE_CORS=false
+    restart: unless-stopped

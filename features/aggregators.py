@@ -64,13 +64,13 @@ class IPAggregator:
         result.index.name = ip_col
 
         # Basic counts
-        result['nombre'] = gb.size()
+        result['total_flows'] = gb.size()
 
         if dst_col in df.columns:
-            result['cnbripdst'] = gb[dst_col].nunique()
+            result['unique_dst_ips'] = gb[dst_col].nunique()
 
         if port_col in df.columns:
-            result['cnportdst'] = gb[port_col].nunique()
+            result['unique_dst_ports'] = gb[port_col].nunique()
 
         # Action-based features
         if action_col in df.columns:
@@ -89,52 +89,40 @@ class IPAggregator:
         port_col: str,
         action_col: str
     ) -> pd.DataFrame:
-        """Add permit/deny based features."""
-        # Permit/Deny counts
-        action_counts = df.groupby([ip_col, action_col]).size().unstack(fill_value=0)
+        """Add permit/deny based features (fully vectorized)."""
+        # Normalise action strings to uppercase so 'Permit', 'PERMIT', 'permit'
+        # all map correctly (normalize_log_columns uppercases, but raw data may not).
+        action_upper = df[action_col].str.upper()
 
-        if 'Permit' in action_counts.columns:
-            result['permit'] = action_counts['Permit']
-        else:
-            result['permit'] = 0
+        # Boolean masks aligned to df's row index — no Python-level loops.
+        is_permit = action_upper.isin({'PERMIT', 'ALLOW', 'ACCEPT'})
+        is_deny   = action_upper.isin({'DENY', 'DROP', 'REJECT', 'BLOCK'})
 
-        if 'Deny' in action_counts.columns:
-            result['deny'] = action_counts['Deny']
-        else:
-            result['deny'] = 0
+        groups = df[ip_col]
 
-        # Port-based features
+        result['permit'] = is_permit.groupby(groups).sum().astype(int)
+        result['deny']   = is_deny.groupby(groups).sum().astype(int)
+
+        # Port-based features — all vectorized via boolean Series + groupby.sum()
         if port_col in df.columns:
-            result['inf1024permit'] = gb.apply(
-                lambda x: ((x[action_col] == 'Permit') &
-                          (x[port_col] <= self.port_threshold)).sum(),
-                include_groups=False
-            )
-            result['sup1024permit'] = gb.apply(
-                lambda x: ((x[action_col] == 'Permit') &
-                          (x[port_col] > self.port_threshold)).sum(),
-                include_groups=False
-            )
-            result['adminpermit'] = gb.apply(
-                lambda x: ((x[action_col] == 'Permit') &
-                          (x[port_col].isin(self.admin_ports))).sum(),
-                include_groups=False
-            )
-            result['inf1024deny'] = gb.apply(
-                lambda x: ((x[action_col] == 'Deny') &
-                          (x[port_col] <= self.port_threshold)).sum(),
-                include_groups=False
-            )
-            result['sup1024deny'] = gb.apply(
-                lambda x: ((x[action_col] == 'Deny') &
-                          (x[port_col] > self.port_threshold)).sum(),
-                include_groups=False
-            )
-            result['admindeny'] = gb.apply(
-                lambda x: ((x[action_col] == 'Deny') &
-                          (x[port_col].isin(self.admin_ports))).sum(),
-                include_groups=False
-            )
+            port  = pd.to_numeric(df[port_col], errors='coerce').fillna(0)
+            lo    = port <= self.port_threshold
+            hi    = port >  self.port_threshold
+            admin = port.isin(self.admin_ports)
+
+            def _gsum(mask: pd.Series) -> pd.Series:
+                return mask.groupby(groups).sum().astype(int)
+
+            result['permit_low_port']  = _gsum(is_permit & lo)
+            result['permit_high_port'] = _gsum(is_permit & hi)
+            result['permit_admin']     = _gsum(is_permit & admin)
+            result['deny_low_port']    = _gsum(is_deny & lo)
+            result['deny_high_port']   = _gsum(is_deny & hi)
+            result['deny_admin']       = _gsum(is_deny & admin)
+        else:
+            for col in ('permit_low_port', 'permit_high_port', 'permit_admin',
+                        'deny_low_port',   'deny_high_port',   'deny_admin'):
+                result[col] = 0
 
         return result
 
@@ -174,26 +162,26 @@ class TimeAggregator:
         result = pd.DataFrame(index=gb.groups.keys())
         result.index.name = group_col
 
-        # Time span
-        result['time_span_seconds'] = gb[date_col].apply(
-            lambda x: (x.max() - x.min()).total_seconds()
+        # Time span — vectorized (max - min per group, then .dt.total_seconds())
+        result['time_span_seconds'] = (
+            (gb[date_col].max() - gb[date_col].min()).dt.total_seconds()
         )
 
         # Access rate
         counts = gb.size()
         result['access_rate'] = counts / (result['time_span_seconds'] + 1)
 
-        # Hour-based features
-        df['hour'] = df[date_col].dt.hour
-        result['unique_hours'] = df.groupby(group_col)['hour'].nunique()
+        # Hour-based features — avoid per-element .apply()
+        hour = df[date_col].dt.hour
+        result['unique_hours'] = hour.groupby(df[group_col]).nunique()
 
-        # Night activity (22h-6h)
-        df['is_night'] = df['hour'].apply(lambda h: 1 if h >= 22 or h < 6 else 0)
-        result['night_ratio'] = df.groupby(group_col)['is_night'].mean()
+        # Night activity (22h-6h) — vectorized boolean
+        is_night = (hour >= 22) | (hour < 6)
+        result['night_ratio'] = is_night.groupby(df[group_col]).mean()
 
-        # Weekend activity
-        df['is_weekend'] = df[date_col].dt.dayofweek >= 5
-        result['weekend_ratio'] = df.groupby(group_col)['is_weekend'].mean()
+        # Weekend activity — vectorized
+        is_weekend = df[date_col].dt.dayofweek >= 5
+        result['weekend_ratio'] = is_weekend.groupby(df[group_col]).mean()
 
         return result
 

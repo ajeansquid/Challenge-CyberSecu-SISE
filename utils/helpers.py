@@ -64,6 +64,71 @@ def validate_port(port: int) -> bool:
     return 0 <= port <= 65535
 
 
+import pandas as pd
+
+
+# Columns emitted by KernelFirewallParser → canonical names used by all app pages
+_KERNEL_COL_MAP = {
+    "src_ip":    "ipsrc",
+    "dst_ip":    "ipdst",
+    "src_port":  "portsrc",
+    "dst_port":  "portdst",
+    "timestamp": "date",
+    "rule":      "regle",
+}
+
+# Legacy French feature names → English (for backwards compatibility)
+_FEATURE_NAME_MAP = {
+    "nombre":        "total_flows",
+    "cnbripdst":     "unique_dst_ips",
+    "cnportdst":     "unique_dst_ports",
+    "inf1024permit": "permit_low_port",
+    "sup1024permit": "permit_high_port",
+    "adminpermit":   "permit_admin",
+    "inf1024deny":   "deny_low_port",
+    "sup1024deny":   "deny_high_port",
+    "admindeny":     "deny_admin",
+    "risque":        "risk",
+}
+
+
+def normalize_log_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Rename columns produced by ``KernelFirewallParser`` to the canonical names
+    expected by every app page (same as ``FirewallParser`` output).
+
+    Already-canonical DataFrames (e.g. from ``FirewallParser`` or a Parquet file
+    created by ``00_transform_raw_data``) are returned unchanged.
+
+    Also normalises ``action`` values to uppercase (PERMIT / DENY) so that all
+    pages can use a single consistent string comparison.
+    """
+    rename = {k: v for k, v in _KERNEL_COL_MAP.items() if k in df.columns and v not in df.columns}
+    if rename:
+        df = df.rename(columns=rename)
+
+    # Uppercase action so pages can compare against 'PERMIT' / 'DENY' uniformly
+    if 'action' in df.columns:
+        df['action'] = df['action'].astype(str).str.upper().str.strip()
+        # Map ACCEPT → PERMIT, DROP/REJECT → DENY for consistency
+        df['action'] = df['action'].replace({'ACCEPT': 'PERMIT', 'DROP': 'DENY', 'REJECT': 'DENY'})
+
+    return df
+
+
+def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Rename legacy French feature names to English.
+
+    This provides backwards compatibility with existing datasets that use
+    the old French naming convention (nombre, cnbripdst, risque, etc.).
+    """
+    rename = {k: v for k, v in _FEATURE_NAME_MAP.items() if k in df.columns and v not in df.columns}
+    if rename:
+        df = df.rename(columns=rename)
+    return df
+
+
 def normalize_action(action: str) -> str:
     """
     Normalize firewall action strings.
