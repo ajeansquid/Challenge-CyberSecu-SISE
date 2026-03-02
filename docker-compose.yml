@@ -11,6 +11,9 @@ services:
     volumes:
       # Mount data directory for persistence
       - ./data:/app/data
+    env_file:
+      - path: .env
+        required: false   # don't fail if .env doesn't exist
     environment:
       - STREAMLIT_SERVER_HEADLESS=true
       - STREAMLIT_SERVER_ENABLE_CORS=false

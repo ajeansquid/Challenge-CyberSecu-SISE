@@ -6,6 +6,7 @@ High-level feature extraction pipelines.
 """
 
 import pandas as pd
+import numpy as np
 from typing import List, Optional, Tuple
 import logging
 
@@ -37,6 +38,58 @@ def _remove_constant_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]
     return df, constant_cols
 
 
+def _remove_correlated_features(
+    df: pd.DataFrame,
+    threshold: float = 0.95
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Remove highly correlated features to reduce multicollinearity.
+
+    For each pair of features with correlation > threshold, removes the one
+    with lower variance (less information).
+
+    Args:
+        df: Feature DataFrame
+        threshold: Correlation threshold (default 0.95)
+
+    Returns:
+        Tuple of (cleaned DataFrame, list of removed column names)
+    """
+    corr_matrix = df.corr().abs()
+
+    # Get upper triangle (avoid duplicates)
+    upper = corr_matrix.where(
+        np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+    )
+
+    # Find features with correlation above threshold
+    to_drop = set()
+    for column in upper.columns:
+        # Find correlated features
+        correlated = upper[column][upper[column] > threshold].index.tolist()
+        if correlated:
+            # For each correlated pair, drop the one with lower variance
+            col_var = df[column].var()
+            for corr_col in correlated:
+                if corr_col not in to_drop:
+                    corr_var = df[corr_col].var()
+                    # Keep the one with higher variance
+                    if col_var < corr_var:
+                        to_drop.add(column)
+                    else:
+                        to_drop.add(corr_col)
+
+    removed = list(to_drop)
+    if removed:
+        logger.warning(
+            f"Removing {len(removed)} highly correlated features "
+            f"(|r| > {threshold}): {removed}"
+        )
+        df = df.drop(columns=removed)
+
+    return df, removed
+
+
 class CourseFeatureExtractor(FeatureExtractor):
     """
     Extract features matching the course format (11 features).
@@ -48,8 +101,15 @@ class CourseFeatureExtractor(FeatureExtractor):
         'deny', 'deny_low_port', 'deny_high_port', 'deny_admin'
     ]
 
-    def __init__(self):
+    def __init__(self, remove_correlated: bool = False, corr_threshold: float = 0.95):
+        """
+        Args:
+            remove_correlated: Whether to remove highly correlated features
+            corr_threshold: Correlation threshold (only used if remove_correlated=True)
+        """
         self._aggregator = IPAggregator()
+        self.remove_correlated = remove_correlated
+        self.corr_threshold = corr_threshold
 
     @property
     def name(self) -> str:
@@ -91,9 +151,16 @@ class CourseFeatureExtractor(FeatureExtractor):
         # Reorder columns
         features = features[self.FEATURE_NAMES]
 
-        # Remove constant features
-        features, removed = _remove_constant_features(features)
-        final_feature_names = [f for f in self.FEATURE_NAMES if f not in removed]
+        # Always remove constant features (objectively useless)
+        features, removed_const = _remove_constant_features(features)
+
+        # Optionally remove highly correlated features
+        removed_corr = []
+        if self.remove_correlated:
+            features, removed_corr = _remove_correlated_features(features, threshold=self.corr_threshold)
+
+        all_removed = removed_const + removed_corr
+        final_feature_names = [f for f in self.FEATURE_NAMES if f not in all_removed]
 
         return FeatureSet(
             data=features,
@@ -101,7 +168,8 @@ class CourseFeatureExtractor(FeatureExtractor):
             index_column=ip_col,
             metadata={
                 'extractor': self.name,
-                'removed_constant_features': removed
+                'removed_constant_features': removed_const,
+                'removed_correlated_features': removed_corr
             }
         )
 
@@ -115,7 +183,9 @@ class FullFeatureExtractor(FeatureExtractor):
         self,
         include_time: bool = True,
         include_ratios: bool = True,
-        include_stats: bool = True
+        include_stats: bool = True,
+        remove_correlated: bool = False,
+        corr_threshold: float = 0.95
     ):
         self._ip_aggregator = IPAggregator()
         self._time_aggregator = TimeAggregator()
@@ -125,6 +195,8 @@ class FullFeatureExtractor(FeatureExtractor):
         self.include_time = include_time
         self.include_ratios = include_ratios
         self.include_stats = include_stats
+        self.remove_correlated = remove_correlated
+        self.corr_threshold = corr_threshold
 
         self._feature_names: List[str] = []
 
@@ -181,8 +253,14 @@ class FullFeatureExtractor(FeatureExtractor):
             )
             result = result.join(stat_features)
 
-        # Remove constant features
-        result, removed = _remove_constant_features(result)
+        # Always remove constant features
+        result, removed_const = _remove_constant_features(result)
+
+        # Optionally remove highly correlated features
+        removed_corr = []
+        if self.remove_correlated:
+            result, removed_corr = _remove_correlated_features(result, threshold=self.corr_threshold)
+
         self._feature_names = list(result.columns)
 
         return FeatureSet(
@@ -194,7 +272,8 @@ class FullFeatureExtractor(FeatureExtractor):
                 'include_time': self.include_time,
                 'include_ratios': self.include_ratios,
                 'include_stats': self.include_stats,
-                'removed_constant_features': removed
+                'removed_constant_features': removed_const,
+                'removed_correlated_features': removed_corr
             }
         )
 
@@ -207,8 +286,15 @@ class SimpleFeatureExtractor(FeatureExtractor):
 
     FEATURE_NAMES = ['total_flows', 'unique_dst_ips', 'unique_dst_ports']
 
-    def __init__(self):
+    def __init__(self, remove_correlated: bool = False, corr_threshold: float = 0.95):
+        """
+        Args:
+            remove_correlated: Whether to remove highly correlated features
+            corr_threshold: Correlation threshold (only used if remove_correlated=True)
+        """
         self._aggregator = IPAggregator()
+        self.remove_correlated = remove_correlated
+        self.corr_threshold = corr_threshold
 
     @property
     def name(self) -> str:
@@ -233,9 +319,16 @@ class SimpleFeatureExtractor(FeatureExtractor):
         # Keep only simple features
         simple = features[['total_flows', 'unique_dst_ips', 'unique_dst_ports']]
 
-        # Remove constant features
-        simple, removed = _remove_constant_features(simple)
-        final_feature_names = [f for f in self.FEATURE_NAMES if f not in removed]
+        # Always remove constant features
+        simple, removed_const = _remove_constant_features(simple)
+
+        # Optionally remove highly correlated features
+        removed_corr = []
+        if self.remove_correlated:
+            simple, removed_corr = _remove_correlated_features(simple, threshold=self.corr_threshold)
+
+        all_removed = removed_const + removed_corr
+        final_feature_names = [f for f in self.FEATURE_NAMES if f not in all_removed]
 
         return FeatureSet(
             data=simple,
@@ -243,6 +336,7 @@ class SimpleFeatureExtractor(FeatureExtractor):
             index_column=ip_col,
             metadata={
                 'extractor': self.name,
-                'removed_constant_features': removed
+                'removed_constant_features': removed_const,
+                'removed_correlated_features': removed_corr
             }
         )

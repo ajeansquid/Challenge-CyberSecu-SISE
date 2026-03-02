@@ -66,6 +66,8 @@ def _cached_extract_features(
     include_time: bool,
     include_ratios: bool,
     include_stats: bool,
+    remove_correlated: bool,
+    corr_threshold: float,
 ) -> FeatureSet:
     """Cached wrapper so repeated UI interactions don't re-run extraction."""
     from services import FeatureService
@@ -80,6 +82,8 @@ def _cached_extract_features(
         include_time=include_time,
         include_ratios=include_ratios,
         include_stats=include_stats,
+        remove_correlated=remove_correlated,
+        corr_threshold=corr_threshold,
         save_as=None,
     )
 
@@ -96,6 +100,17 @@ def render_config_section(state, df):
         include_ratios = st.checkbox("Include ratio features", value=True)
         include_stats = st.checkbox("Include statistical features", value=True)
         admin_ports = st.text_input("Admin ports", value="21,22,3389,3306")
+
+        st.markdown("---")
+        remove_correlated = st.checkbox(
+            "Remove highly correlated features",
+            value=False,
+            help="Automatically remove features with |r| > threshold to reduce multicollinearity. "
+                 "⚠️ May remove intentionally engineered features."
+        )
+        corr_threshold = 0.95  # default
+        if remove_correlated:
+            corr_threshold = st.slider("Correlation threshold", 0.8, 0.99, 0.95, 0.01)
 
     with col2:
         st.subheader("Column Mapping")
@@ -127,19 +142,29 @@ def render_config_section(state, df):
                     include_time=include_time,
                     include_ratios=include_ratios,
                     include_stats=include_stats,
+                    remove_correlated=remove_correlated,
+                    corr_threshold=corr_threshold if remove_correlated else 0.95,
                 )
                 state.features_data = feature_set.data
 
-                # Check for removed constant features
-                removed = feature_set.metadata.get('removed_constant_features', [])
-                if removed:
-                    st.warning(
-                        f"Removed {len(removed)} constant feature(s) (zero variance): "
-                        f"{', '.join(removed)}"
+                # Check for removed features
+                removed_const = feature_set.metadata.get('removed_constant_features', [])
+                removed_corr = feature_set.metadata.get('removed_correlated_features', [])
+
+                if removed_const:
+                    st.info(
+                        f"ℹ️ Removed {len(removed_const)} constant feature(s) (zero variance): "
+                        f"{', '.join(removed_const)}"
+                    )
+                if removed_corr:
+                    threshold_used = corr_threshold if remove_correlated else 0.95
+                    st.info(
+                        f"ℹ️ Removed {len(removed_corr)} highly correlated feature(s) (|r| > {threshold_used}): "
+                        f"{', '.join(removed_corr)}"
                     )
 
                 st.success(
-                    f"Generated {len(feature_set.feature_names)} features "
+                    f"✅ Generated {len(feature_set.feature_names)} features "
                     f"for {len(feature_set.data)} IPs!"
                 )
             except Exception as e:

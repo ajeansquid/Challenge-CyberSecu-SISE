@@ -40,3 +40,8 @@ data/clean_data/log_export.log
 data/clean_data/firewall_sample.parquet
 
 # Keep only logs_parsed.parquet (99MB) which the app needs
+
+# Secrets — never bake into the image; inject at runtime via docker-compose env_file
+.env
+.env.*
+*.env

@@ -77,6 +77,8 @@ class FeatureService:
         include_time: bool = True,
         include_ratios: bool = True,
         include_stats: bool = True,
+        remove_correlated: bool = False,
+        corr_threshold: float = 0.95,
         save_as: str = None
     ) -> FeatureSet:
         """
@@ -92,6 +94,8 @@ class FeatureService:
             include_time: Include time features
             include_ratios: Include ratio features
             include_stats: Include statistical features
+            remove_correlated: Remove highly correlated features
+            corr_threshold: Correlation threshold for removal
             save_as: Optional name to save in store
 
         Returns:
@@ -100,7 +104,9 @@ class FeatureService:
         extractor = FullFeatureExtractor(
             include_time=include_time,
             include_ratios=include_ratios,
-            include_stats=include_stats
+            include_stats=include_stats,
+            remove_correlated=remove_correlated,
+            corr_threshold=corr_threshold
         )
 
         feature_set = extractor.extract(
