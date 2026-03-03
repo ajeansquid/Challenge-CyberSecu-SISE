@@ -1,4 +1,4 @@
-# Challenge Toolkit v2 — Developer & User Guide
+# Projet SISE-OPSIE 2026 — Developer & User Guide
 
 **Audience**: DS / ML / SWE students building the ML pipeline; cybersecurity partners providing log data.
 
@@ -32,7 +32,7 @@ Teams of **cybersecurity students** capture network traffic from a monitored app
 3. Train a binary classifier: is an IP `positif` (suspicious/attacking) or `negatif` (normal)?
 4. Build and present a working dashboard showing model performance and live predictions
 
-This toolkit is the ML team's starting point — a modular, layered codebase where every component (parser, feature extractor, model, evaluation) can be swapped or extended without touching the rest.
+This app is the ML team's deliverable — a modular, layered codebase where every component (parser, feature extractor, model, evaluation) can be swapped or extended without touching the rest.
 
 ### Team Responsibilities
 
@@ -320,7 +320,7 @@ For intrusion detection: **minimize FN** (missed attacks) even at the cost of mo
 
 ### Cross-Validation
 
-With small labeled datasets (< 500 IPs), 5-fold cross-validation gives a more realistic estimate than a single train/test split. The toolkit runs CV automatically during training and reports mean ± std for each metric.
+With small labeled datasets (< 500 IPs), 5-fold cross-validation gives a more realistic estimate than a single train/test split. The app runs CV automatically during training and reports mean ± std for each metric.
 
 If your dataset is very small (< 50 labeled IPs), enable **Leave-One-Out CV** in the training page options.
 
@@ -358,7 +358,7 @@ model:
   cv_folds: 5
 
 app:
-  title: "Challenge Toolkit v2"
+  title: "SISE-OPSIE 2026"
   layout: "wide"
   max_upload_size_mb: 200
 ```
@@ -562,7 +562,7 @@ except ParsingError as e:
 
 | Approach | Strengths | Weaknesses |
 |----------|-----------|-----------|
-| **This toolkit (Streamlit)** | Native ML, custom models, full Python control | No real-time ingestion |
+| **This app (Streamlit)** | Native ML, custom models, full Python control | No real-time ingestion |
 | **ELK** | Real-time log ingestion, powerful search, Kibana dashboards | Less flexible for custom ML models |
 | **Hybrid** | Use Logstash for ingestion → export CSVs → train here | More setup but best of both worlds |
 
@@ -573,7 +573,7 @@ For the course presentation, both approaches are acceptable. The ELK setup in `d
 ## 12. Project Structure
 
 ```
-challenge_toolkit_v2/
+sise_opsie_2026/
 ├── main.py                          # Streamlit entry point
 ├── run.py                           # Launcher (--port, --host, --debug)
 ├── requirements.txt                 # pip dependencies

@@ -1,7 +1,7 @@
 [project]
-name = "challenge-toolkit-v2"
+name = "sise-opsie-2026"
 version = "0.1.0"
-description = "Add your description here"
+description = "Firewall log analysis and ML-based anomaly detection — Projet SISE-OPSIE 2026"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

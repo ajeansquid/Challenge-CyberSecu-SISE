@@ -213,10 +213,10 @@ class StatisticalAggregator:
 
         prefix = numeric_col
 
-        result[f'{prefix}_mean'] = gb[numeric_col].mean()
-        result[f'{prefix}_std'] = gb[numeric_col].std().fillna(0)
-        result[f'{prefix}_min'] = gb[numeric_col].min()
-        result[f'{prefix}_max'] = gb[numeric_col].max()
-        result[f'{prefix}_range'] = result[f'{prefix}_max'] - result[f'{prefix}_min']
+        result[f'avg_dst_port'] = gb[numeric_col].mean()
+        result[f'port_std'] = gb[numeric_col].std().fillna(0)
+        result[f'port_min'] = gb[numeric_col].min()
+        result[f'port_max'] = gb[numeric_col].max()
+        result[f'port_range'] = result[f'port_max'] - result[f'port_min']
 
         return result

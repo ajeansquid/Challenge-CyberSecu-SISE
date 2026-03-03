@@ -303,8 +303,15 @@ def render_detailed_breakdown(df: pd.DataFrame):
     """Render detailed breakdown combining all dimensions."""
     st.subheader("Detailed Breakdown")
 
-    # Multi-dimensional grouping
-    breakdown = df.groupby(['proto', 'action', 'port_category'], observed=False).size().reset_index(name='count')
+    # Multi-dimensional grouping — observed=True avoids empty cross-product rows
+    breakdown = (
+        df.groupby(['proto', 'action', 'port_category'], observed=True)
+        .size()
+        .reset_index(name='count')
+    )
+    # Convert Categorical → str so px.treemap can handle the path
+    breakdown['port_category'] = breakdown['port_category'].astype(str)
+    breakdown = breakdown[breakdown['count'] > 0]
 
     fig = px.treemap(
         breakdown,
@@ -318,9 +325,16 @@ def render_detailed_breakdown(df: pd.DataFrame):
 
     # Top destination ports
     st.subheader("Top 20 Destination Ports")
-    top_ports = df.groupby(['portdst', 'action'], observed=False).size().reset_index(name='count')
+    top_ports = df.groupby(['portdst', 'action'], observed=True).size().reset_index(name='count')
     top_ports_total = top_ports.groupby('portdst')['count'].sum().nlargest(20).index
-    top_ports = top_ports[top_ports['portdst'].isin(top_ports_total)]
+    top_ports = top_ports[top_ports['portdst'].isin(top_ports_total)].copy()
+    # Cast to str so Plotly treats port numbers as categories (readable labels + hover)
+    top_ports['portdst'] = top_ports['portdst'].astype(int).astype(str)
+    # Sort bars by total count descending
+    port_order = (
+        top_ports.groupby('portdst')['count'].sum()
+        .sort_values(ascending=False).index.tolist()
+    )
 
     fig = px.bar(
         top_ports,
@@ -328,7 +342,11 @@ def render_detailed_breakdown(df: pd.DataFrame):
         y='count',
         color='action',
         title="Top 20 Destination Ports",
-        color_discrete_map={'PERMIT': '#2ecc71', 'DENY': '#e74c3c'}
+        color_discrete_map={'PERMIT': '#2ecc71', 'DENY': '#e74c3c'},
+        category_orders={'portdst': port_order},
+        hover_data={'portdst': True, 'action': True, 'count': True},
+        labels={'portdst': 'Port', 'count': 'Flows', 'action': 'Action'},
     )
-    fig.update_layout(xaxis_title="Destination Port", yaxis_title="Count")
+    fig.update_layout(xaxis_title="Destination Port", yaxis_title="Flow Count",
+                      xaxis={'type': 'category'})
     st.plotly_chart(fig, width='stretch')

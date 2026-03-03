@@ -1,8 +1,8 @@
-# Docker Compose for CyberSec ML Toolkit
+# Docker Compose for SISE-OPSIE 2026
 # Challenge SISE-OPSIE 2026
 
 services:
-  cybersec-toolkit:
+  sise-opsie-2026:
     build:
       context: .
       dockerfile: Dockerfile

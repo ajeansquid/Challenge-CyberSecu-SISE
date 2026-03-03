@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Challenge Toolkit v2 - Main Streamlit Application
+Projet SISE-OPSIE 2026 - Firewall Log Analysis Dashboard
 
-A modular toolkit for cybersecurity log analysis and ML-based threat detection.
+Streamlit app for ML-driven analysis of iptables firewall logs.
 """
 
 import streamlit as st
@@ -25,7 +25,7 @@ from app.pages import (
 def main():
     """Main application entry point."""
     st.set_page_config(
-        page_title="CyberSec ML Toolkit",
+        page_title="SISE-OPSIE 2026",
         page_icon="🔒",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -36,7 +36,8 @@ def main():
 
     # Sidebar navigation
     with st.sidebar:
-        st.title("CyberSec ML Toolkit")
+        st.title("🔒 SISE-OPSIE 2026")
+        st.caption("Firewall log analysis & anomaly detection")
         st.markdown("---")
 
         page = st.radio(

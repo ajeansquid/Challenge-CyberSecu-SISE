@@ -1,4 +1,4 @@
-# Challenge Toolkit v2 - Configuration
+# SISE-OPSIE 2026 - Configuration
 
 # Parser settings
 parser:
@@ -41,7 +41,7 @@ model:
 
 # Application settings
 app:
-  title: "CyberSec ML Toolkit"
+  title: "SISE-OPSIE 2026"
   theme: "dark"
   page_icon: "lock"
   layout: "wide"

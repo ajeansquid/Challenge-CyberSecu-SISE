@@ -1,6 +1,6 @@
-# Challenge Toolkit v2
+# Projet SISE-OPSIE 2026 — Firewall Log Analysis Dashboard
 
-A modular, layered toolkit for **ML-driven firewall log analysis** and **network intrusion detection**. Built as a reusable base project for the cybersecurity challenge module, where data/ML/SWE teams collaborate with cybersecurity partners to analyze network traffic and detect suspicious IP behavior.
+Streamlit web application for **ML-driven analysis of iptables firewall logs**. Built by the SISE team as part of the SISE-OPSIE 2026 challenge, in collaboration with the OPSIE infrastructure team.
 
 ---
 
@@ -17,7 +17,7 @@ The final deliverable is a working **web application or dashboard** (this toolki
 
 ---
 
-## What This Toolkit Does
+## What This App Does
 
 1. **Parses** raw firewall or syslog files into structured DataFrames
 2. **Engineers** 11 course-standard features per source IP (connection counts, port patterns, permit/deny ratios)

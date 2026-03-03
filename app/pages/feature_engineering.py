@@ -98,7 +98,17 @@ def render_config_section(state, df):
         st.subheader("Options")
         include_time = st.checkbox("Include time features", value=True)
         include_ratios = st.checkbox("Include ratio features", value=True)
-        include_stats = st.checkbox("Include statistical features", value=True)
+        include_stats = st.checkbox(
+            "Include statistical features",
+            value=False,
+            help=(
+                "Adds 5 extra features per source IP based on destination port distribution:\n"
+                "- **avg_dst_port**: mean destination port (e.g. ~22 = mostly SSH)\n"
+                "- **port_std**: std dev of ports hit (high = scanning many ports)\n"
+                "- **port_min / port_max**: lowest / highest port reached\n"
+                "- **port_range**: max − min (wide range = port-scan indicator)"
+            )
+        )
         st.text_input("Admin ports", value="21,22,3389,3306")
 
         st.markdown("---")
@@ -177,7 +187,9 @@ def render_features_section(state):
     df = state.features_data
 
     st.subheader("Statistics")
-    st.dataframe(df.describe(), width='stretch')
+    desc = df.describe().T  # transpose: features as rows, stats as columns
+    desc.index.name = "feature"
+    st.dataframe(desc.style.format("{:.3f}"), width='stretch')
 
     st.subheader("Preview")
     st.dataframe(df.head(20), width='stretch')

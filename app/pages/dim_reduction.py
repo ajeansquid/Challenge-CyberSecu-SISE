@@ -389,9 +389,9 @@ def _render_results(proj_df, n_dims, color_col, algo, explained, was_sampled, to
         tab_coords, tab_full = st.tabs(["Coordinates + labels", "Full joined table"])
         with tab_coords:
             show_cols = dim_cols + [c for c in label_cols if c in proj_df.columns]
-            st.dataframe(proj_df[show_cols], use_container_width=True)
+            st.dataframe(proj_df[show_cols], width='stretch')
         with tab_full:
-            st.dataframe(proj_df, use_container_width=True)
+            st.dataframe(proj_df, width='stretch')
 
     # --- Download ---
     csv = proj_df.to_csv(index=False)

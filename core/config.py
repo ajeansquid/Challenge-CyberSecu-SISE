@@ -2,7 +2,7 @@
 """
 Configuration Management
 ------------------------
-Centralized configuration for the toolkit.
+Centralized configuration for the app.
 """
 
 from dataclasses import dataclass, field

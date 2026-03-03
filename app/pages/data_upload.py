@@ -15,27 +15,25 @@ def render():
 
     st.title("Data Upload & Exploration")
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Upload CSV/TXT", "Upload Parquet", "Preview", "Statistics"])
+    tab1, tab2, tab3 = st.tabs(["Upload", "Preview", "Statistics"])
 
     with tab1:
         render_upload_section(state)
 
     with tab2:
-        render_parquet_upload_section(state)
-
-    with tab3:
         render_preview_section(state)
 
-    with tab4:
+    with tab3:
         render_stats_section(state)
 
 
 def render_upload_section(state):
     """Render upload controls."""
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.subheader("Raw Logs (CSV)")
+        st.subheader("Raw Logs (CSV / TXT)")
+        st.caption("⚠️ Unlabeled — for unsupervised anomaly detection & clustering only.")
         raw_file = st.file_uploader(
             "Upload raw log file",
             type=['csv', 'txt'],
@@ -64,6 +62,7 @@ def render_upload_section(state):
 
     with col2:
         st.subheader("Excel / CSV File")
+        st.caption("ℹ️ Choose below: labeled data enables supervised training; unlabeled is for feature engineering only.")
         labeled_file = st.file_uploader(
             "Upload Excel or CSV file",
             type=['xlsx', 'csv'],
@@ -73,7 +72,10 @@ def render_upload_section(state):
         if labeled_file:
             load_as = st.radio(
                 "Load as",
-                ["Labeled data (has target column)", "Raw logs (unlabeled, for feature engineering)"],
+                [
+                    "Labeled data (has target column) — enables supervised model training",
+                    "Raw logs (unlabeled) — unsupervised / feature engineering only",
+                ],
                 key='load_as_radio'
             )
 
@@ -102,58 +104,45 @@ def render_upload_section(state):
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-
-def render_parquet_upload_section(state):
-    """Upload and load a pre-processed Parquet file (e.g. from 00_transform_raw_data)."""
-    st.subheader("Parquet – logs pré-traités")
-    st.caption(
-        "Charger un fichier `.parquet` produit par le notebook `00_transform_raw_data` "
-        "(via `KernelFirewallParser` + `save_parquet`)."
-    )
-
-    parquet_file = st.file_uploader(
-        "Fichier Parquet",
-        type=["parquet"],
-        key="parquet_upload",
-    )
-
-    if parquet_file:
-        with st.expander("Options (optionnel)"):
-            col1, col2 = st.columns(2)
-            with col1:
-                date_from = st.text_input("Date début (YYYY-MM-DD)", value="", key="pq_date_from")
-                date_to   = st.text_input("Date fin   (YYYY-MM-DD)", value="", key="pq_date_to")
-            with col2:
-                drop_fw = st.checkbox("Supprimer colonne `fw`", value=True, key="pq_drop_fw")
-
-        if st.button("Charger le Parquet", key="load_parquet_btn"):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as f:
-                f.write(parquet_file.getvalue())
-                temp_path = f.name
-
-            try:
-                drop_cols   = ["fw"] if drop_fw else None
-                date_filter = (date_from, date_to) if date_from and date_to else None
-
-                df = state.data_service.load_parquet_file(
-                    temp_path,
-                    drop_cols=drop_cols,
-                    date_filter=date_filter,
-                )
-                state.raw_data = df
-                st.success(
-                    f"✅ {len(df):,} lignes chargées — {len(df.columns)} colonnes : "
-                    f"{', '.join(df.columns.tolist())}"
-                )
-                st.dataframe(df.head(10))
-            except Exception as e:
-                st.error(f"Erreur : {e}")
+    with col3:
+        st.subheader("Parquet")
+        st.caption("⚠️ Unlabeled — for unsupervised anomaly detection & clustering only.")
+        parquet_file = st.file_uploader(
+            "Pre-processed `.parquet` file",
+            type=["parquet"],
+            key="parquet_upload",
+        )
+        if parquet_file:
+            with st.expander("Options (optional)"):
+                date_from = st.text_input("Start date (YYYY-MM-DD)", value="", key="pq_date_from")
+                date_to   = st.text_input("End date   (YYYY-MM-DD)", value="", key="pq_date_to")
+                drop_fw   = st.checkbox("Drop `fw` column", value=True, key="pq_drop_fw")
+            if st.button("Load Parquet", key="load_parquet_btn"):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".parquet") as f:
+                    f.write(parquet_file.getvalue())
+                    temp_path = f.name
+                try:
+                    drop_cols   = ["fw"] if drop_fw else None
+                    date_filter = (date_from, date_to) if date_from and date_to else None
+                    df = state.data_service.load_parquet_file(
+                        temp_path,
+                        drop_cols=drop_cols,
+                        date_filter=date_filter,
+                    )
+                    state.raw_data = df
+                    st.success(
+                        f"✅ {len(df):,} rows loaded — {len(df.columns)} columns: "
+                        f"{', '.join(df.columns.tolist())}"
+                    )
+                    st.dataframe(df.head(10))
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 
 def render_preview_section(state):
     """Render data preview."""
     if state.has_raw_data():
-        st.subheader("Raw Logs")
+        st.subheader("Raw Logs (unlabeled)")
         st.dataframe(state.raw_data.head(100), width='stretch')
 
     if state.has_labeled_data():

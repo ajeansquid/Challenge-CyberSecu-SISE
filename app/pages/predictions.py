@@ -204,12 +204,12 @@ def _show_supervised_results(results: pd.DataFrame, positive_label: str):
     cols[2].metric("Positive rate", f"{pos_count / len(results) * 100:.1f}%")
 
     st.subheader("Top 20 results")
-    st.dataframe(results.head(20), use_container_width=True)
+    st.dataframe(results.head(20), width='stretch')
 
     if 'probability' in results.columns:
         st.subheader("Probability distribution")
         fig = px.histogram(results, x='probability', nbins=50)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     csv = results.to_csv(index=False)
     st.download_button("Download results (CSV)", csv, "predictions_supervised.csv", "text/csv")
@@ -257,12 +257,12 @@ def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list, state=Non
         nbins=50,
         color_discrete_map={True: '#e74c3c', False: '#2ecc71'},
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.subheader("Top anomalous rows")
     anomalies = result_df[result_df['is_anomaly']].head(20)
     display_cols = [c for c in feature_cols + ['anomaly_score', 'is_anomaly'] if c in anomalies.columns]
-    st.dataframe(anomalies[display_cols], use_container_width=True)
+    st.dataframe(anomalies[display_cols], width='stretch')
 
     # ── SHAP feature importance ──────────────────────────────────────────────
     if state is not None:
@@ -299,7 +299,7 @@ def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list, state=Non
                 color_continuous_scale='Reds',
             )
             fig.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
             # SHAP beeswarm-style scatter (top anomalies)
             st.markdown("**SHAP values for top anomalies** (anomaly score ← which feature drove it)")
@@ -321,7 +321,7 @@ def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list, state=Non
                 title=f'SHAP values — top {n_show} anomalies',
             )
             fig2.update_layout(yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
     csv = result_df.to_csv(index=False)
     st.download_button("Download results (CSV)", csv, "predictions_anomaly.csv", "text/csv")
@@ -368,12 +368,12 @@ def _show_clustering_results(result_df: pd.DataFrame, feature_cols: list):
             color=result_df['cluster'].astype(str),
             color_discrete_sequence=px.colors.qualitative.Set1,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     st.subheader("Cluster statistics (mean per cluster)")
     valid_cols = [c for c in feature_cols if c in result_df.columns]
     stats = result_df.groupby('cluster')[valid_cols].mean()
-    st.dataframe(stats, use_container_width=True)
+    st.dataframe(stats, width='stretch')
 
     csv = result_df.to_csv(index=False)
     st.download_button("Download results (CSV)", csv, "predictions_clusters.csv", "text/csv")
