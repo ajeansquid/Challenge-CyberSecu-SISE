@@ -99,7 +99,7 @@ def render_config_section(state, df):
         include_time = st.checkbox("Include time features", value=True)
         include_ratios = st.checkbox("Include ratio features", value=True)
         include_stats = st.checkbox("Include statistical features", value=True)
-        admin_ports = st.text_input("Admin ports", value="21,22,3389,3306")
+        st.text_input("Admin ports", value="21,22,3389,3306")
 
         st.markdown("---")
         remove_correlated = st.checkbox(

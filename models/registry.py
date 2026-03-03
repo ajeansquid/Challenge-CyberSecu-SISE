@@ -18,7 +18,7 @@ from .classifiers import (
     SVMModel,
     KNNModel
 )
-from .anomaly import IsolationForestModel, OneClassSVMModel
+from .anomaly import IsolationForestModel, OneClassSVMModel, LocalOutlierFactorModel
 from .clustering import KMeansModel, DBSCANModel
 
 
@@ -88,6 +88,12 @@ class ModelRegistry:
             name='One-Class SVM',
             model_class=OneClassSVMModel,
             description='Boundary-based anomaly detection',
+            model_type='anomaly'
+        ),
+        'local_outlier_factor': ModelInfo(
+            name='Local Outlier Factor',
+            model_class=LocalOutlierFactorModel,
+            description='Density-based: flags IPs anomalous relative to their local neighbours',
             model_type='anomaly'
         ),
 

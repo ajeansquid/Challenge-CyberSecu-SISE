@@ -6,7 +6,7 @@ from .classifiers import (
     RandomForestModel,
     GradientBoostingModel
 )
-from .anomaly import IsolationForestModel
+from .anomaly import IsolationForestModel, LocalOutlierFactorModel
 from .clustering import KMeansModel
 from .pipeline import ModelPipeline
 from .io import save_model_file, load_model_file, audit_skops_file, skops_available
@@ -19,6 +19,7 @@ __all__ = [
     'RandomForestModel',
     'GradientBoostingModel',
     'IsolationForestModel',
+    'LocalOutlierFactorModel',
     'KMeansModel',
     'ModelPipeline',
     'save_model_file',

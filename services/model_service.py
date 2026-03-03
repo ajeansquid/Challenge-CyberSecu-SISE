@@ -277,26 +277,30 @@ class ModelService:
         self,
         df: pd.DataFrame,
         feature_cols: List[str] = None,
-        contamination: float = 0.1
+        contamination: float = 0.1,
+        model_key: str = 'isolation_forest',
+        **model_params,
     ) -> pd.DataFrame:
         """
-        Detect anomalies using Isolation Forest.
+        Fit an anomaly detector and flag anomalies.
 
         Args:
-            df: Input DataFrame
-            feature_cols: Feature columns
-            contamination: Expected anomaly rate
+            df:           Input DataFrame.
+            feature_cols: Feature columns (defaults to all numeric).
+            contamination: Expected anomaly rate.
+            model_key:    One of 'isolation_forest', 'one_class_svm', 'local_outlier_factor'.
+            **model_params: Extra kwargs forwarded to the model constructor.
 
         Returns:
-            DataFrame with anomaly flags
+            DataFrame with ``is_anomaly`` (bool) and ``anomaly_score`` (float) columns.
         """
         if feature_cols is None:
             feature_cols = list(df.select_dtypes(include=[np.number]).columns)
 
         X = df[feature_cols].values
 
-        self._anomaly_detector = IsolationForestModel(
-            contamination=contamination
+        self._anomaly_detector = ModelRegistry.create(
+            model_key, contamination=contamination, **model_params
         )
         self._anomaly_detector.fit(X)
 
@@ -305,6 +309,52 @@ class ModelService:
         output['anomaly_score'] = self._anomaly_detector.score(X)
 
         return output.sort_values('anomaly_score')
+
+    def compute_shap_values(
+        self,
+        df: pd.DataFrame,
+        feature_cols: List[str],
+        max_rows: int = 500,
+    ) -> Optional[Any]:
+        """
+        Compute SHAP values for the fitted anomaly detector.
+
+        Uses ``TreeExplainer`` for IsolationForest (fast),
+        ``KernelExplainer`` for all other models (slower, sampled).
+
+        Args:
+            df:           Feature DataFrame.
+            feature_cols: Columns to explain.
+            max_rows:     Cap on rows for KernelExplainer (performance).
+
+        Returns:
+            shap.Explanation object, or None if shap is unavailable.
+        """
+        try:
+            import shap
+        except ImportError:
+            return None
+
+        if not self.has_fitted_anomaly_detector:
+            return None
+
+        X = df[feature_cols].values
+        model = self._anomaly_detector._model
+
+        try:
+            # IsolationForest supports TreeExplainer directly
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X)
+        except Exception:
+            # Fallback: KernelExplainer on a small background sample
+            bg = shap.sample(X, min(100, len(X)))
+            predict_fn = lambda x: self._anomaly_detector.score(x)  # noqa: E731
+            explainer = shap.KernelExplainer(predict_fn, bg)
+            X_sample = X[:max_rows]
+            shap_values = explainer.shap_values(X_sample)
+            df = df.iloc[:max_rows]
+
+        return shap_values, df[feature_cols].iloc[:len(shap_values)], feature_cols
 
     def cluster(
         self,

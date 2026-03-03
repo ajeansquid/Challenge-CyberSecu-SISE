@@ -95,7 +95,6 @@ def render_summary_metrics(df: pd.DataFrame):
     tcp_flows = (df['proto'] == 'TCP').sum()
     udp_flows = (df['proto'] == 'UDP').sum()
     _ext_mask = ~df['ipsrc'].astype(str).str.startswith(INTERNAL_PREFIX)
-    external_ips = _ext_mask.sum()
 
     col1.metric("PERMIT", f"{permits:,}")
     col2.metric("DENY", f"{denies:,}")

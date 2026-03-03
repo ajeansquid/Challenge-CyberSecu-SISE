@@ -51,6 +51,10 @@ _HYPERPARAM_DEFS = {
         ('nu',     'float',  0.01, 0.5, 0.1,                              'Nu (anomaly fraction bound)'),
         ('kernel', 'select', ['rbf', 'linear', 'poly', 'sigmoid'], 'rbf', 'Kernel'),
     ],
+    'local_outlier_factor': [
+        ('n_neighbors',   'slider', 2,   50,  20,  'Number of neighbours'),
+        ('contamination', 'float',  0.01, 0.5, 0.1, 'Expected anomaly rate'),
+    ],
     # Unsupervised - Clustering
     'kmeans': [
         ('n_clusters', 'slider', 2, 20, 5,    'Number of clusters'),
@@ -558,7 +562,7 @@ def render_anomaly_training_section(state, df):
 
     col1, col2 = st.columns(2)
     with col1:
-        scale_features = st.checkbox("Scale features", value=True, key='unsup_scale')
+        st.checkbox("Scale features", value=True, key='unsup_scale')
 
     if st.button("Train Anomaly Detector", type="primary", key='unsup_anomaly_btn'):
         try:
@@ -569,7 +573,8 @@ def render_anomaly_training_section(state, df):
                 result_df = state.model_service.detect_anomalies(
                     df,
                     feature_cols=features,
-                    contamination=contamination
+                    contamination=contamination,
+                    model_key=model_key,
                 )
 
                 # Store results

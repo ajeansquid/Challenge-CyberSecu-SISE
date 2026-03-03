@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Predictions Page — Supervised, Anomaly Detection, and Clustering inference."""
 
+import traceback
+
 import streamlit as st
 import plotly.express as px
 import pandas as pd
@@ -185,7 +187,7 @@ def _render_supervised_batch(state):
             st.success(f"{len(results):,} predictions generated.")
         except Exception as exc:
             st.error(f"Error: {exc}")
-            import traceback; st.code(traceback.format_exc())
+            st.code(traceback.format_exc())
 
     if state.has_predictions():
         _show_supervised_results(
@@ -232,14 +234,14 @@ def _render_anomaly(state):
             st.session_state['_anom_results'] = result_df
         except Exception as exc:
             st.error(f"Error: {exc}")
-            import traceback; st.code(traceback.format_exc())
+            st.code(traceback.format_exc())
 
     result_df = st.session_state.get('_anom_results')
     if result_df is not None:
-        _show_anomaly_results(result_df, feature_cols)
+        _show_anomaly_results(result_df, feature_cols, state)
 
 
-def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list):
+def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list, state=None):
     n_total = len(result_df)
     n_anom = int(result_df['is_anomaly'].sum())
 
@@ -261,6 +263,65 @@ def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list):
     anomalies = result_df[result_df['is_anomaly']].head(20)
     display_cols = [c for c in feature_cols + ['anomaly_score', 'is_anomaly'] if c in anomalies.columns]
     st.dataframe(anomalies[display_cols], use_container_width=True)
+
+    # ── SHAP feature importance ──────────────────────────────────────────────
+    if state is not None:
+        st.subheader("Feature Importance (SHAP)")
+        st.caption(
+            "SHAP values show which features push the anomaly score lower (more anomalous). "
+            "Positive SHAP = feature increased anomaly score. "
+            "Negative SHAP = feature drove the IP toward anomalous."
+        )
+        if st.button("Compute SHAP values", key="shap_compute_btn"):
+            with st.spinner("Computing SHAP values… (may take a moment for KernelExplainer)"):
+                shap_result = state.model_service.compute_shap_values(result_df, feature_cols)
+            if shap_result is None:
+                st.warning("SHAP not available — run `uv add shap` to install.")
+            else:
+                shap_values, shap_df, shap_cols = shap_result
+                st.session_state['_shap_values'] = (shap_values, shap_df, shap_cols)
+
+        if '_shap_values' in st.session_state:
+            shap_values, shap_df, shap_cols = st.session_state['_shap_values']
+            # Mean absolute SHAP per feature
+            mean_abs = np.abs(shap_values).mean(axis=0)
+            shap_importance = pd.DataFrame({
+                'feature': shap_cols,
+                'mean_|shap|': mean_abs,
+            }).sort_values('mean_|shap|', ascending=False)
+
+            fig = px.bar(
+                shap_importance,
+                x='mean_|shap|', y='feature',
+                orientation='h',
+                title='Mean |SHAP| per Feature (higher = more influential)',
+                color='mean_|shap|',
+                color_continuous_scale='Reds',
+            )
+            fig.update_layout(yaxis={'categoryorder': 'total ascending'}, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+            # SHAP beeswarm-style scatter (top anomalies)
+            st.markdown("**SHAP values for top anomalies** (anomaly score ← which feature drove it)")
+            n_show = min(50, len(shap_df))
+            shap_long = []
+            for i, row in shap_df.head(n_show).iterrows():
+                for j, feat in enumerate(shap_cols):
+                    shap_long.append({
+                        'IP': str(i),
+                        'feature': feat,
+                        'shap_value': float(shap_values[shap_df.index.get_loc(i), j]),
+                        'feature_value': float(row[feat]),
+                    })
+            shap_long_df = pd.DataFrame(shap_long)
+            fig2 = px.strip(
+                shap_long_df, x='shap_value', y='feature',
+                color='feature_value',
+                color_continuous_scale='RdBu',
+                title=f'SHAP values — top {n_show} anomalies',
+            )
+            fig2.update_layout(yaxis={'categoryorder': 'total ascending'})
+            st.plotly_chart(fig2, use_container_width=True)
 
     csv = result_df.to_csv(index=False)
     st.download_button("Download results (CSV)", csv, "predictions_anomaly.csv", "text/csv")
@@ -285,7 +346,7 @@ def _render_clustering(state):
             st.session_state['_clust_results'] = result_df
         except Exception as exc:
             st.error(f"Error: {exc}")
-            import traceback; st.code(traceback.format_exc())
+            st.code(traceback.format_exc())
 
     result_df = st.session_state.get('_clust_results')
     if result_df is not None:
@@ -318,164 +379,3 @@ def _show_clustering_results(result_df: pd.DataFrame, feature_cols: list):
     st.download_button("Download results (CSV)", csv, "predictions_clusters.csv", "text/csv")
 
 
-
-def render():
-    """Render predictions page."""
-    state = get_state()
-
-    st.title("Predictions")
-    st.caption("**Supervised Predictions** — uses a trained classifier model")
-
-    if not state.has_trained_model():
-        st.warning(
-            "**No trained model.** Train a supervised classifier in Model Training first.\n\n"
-            "For **unsupervised detection** (no labels needed), use:\n"
-            "- **Feature Engineering** → **Analysis Dashboard** → Anomaly Detection tab"
-        )
-        return
-
-    tab_single, tab_batch = st.tabs(["🔍 Single Prediction", "📦 Batch Predictions"])
-
-    with tab_single:
-        render_single_prediction(state)
-
-    with tab_batch:
-        render_predict_section(state)
-        if state.has_predictions():
-            render_results_section(state)
-
-
-# ---------------------------------------------------------------------------
-# Single prediction
-# ---------------------------------------------------------------------------
-
-def render_single_prediction(state):
-    """Let the user type in feature values and get a one-off prediction."""
-    st.header("Single Observation Prediction")
-
-    pipeline = state.model_service.active_model
-    feature_names = pipeline.feature_names if pipeline else []
-
-    if not feature_names:
-        st.info("No feature names known — train a model first.")
-        return
-
-    st.markdown("Enter values for each feature:")
-
-    # Use reference data to show reasonable defaults / ranges
-    ref_df = None
-    if state.has_features():
-        ref_df = state.features_data
-    elif state.has_labeled_data():
-        ref_df = state.labeled_data
-
-    values = {}
-    cols_per_row = 3
-    rows = [feature_names[i:i+cols_per_row] for i in range(0, len(feature_names), cols_per_row)]
-
-    for row_features in rows:
-        cols = st.columns(len(row_features))
-        for col, feat in zip(cols, row_features):
-            default_val = 0.0
-            if ref_df is not None and feat in ref_df.columns:
-                default_val = float(ref_df[feat].median())
-            values[feat] = col.number_input(
-                feat, value=default_val, key=f"single_{feat}"
-            )
-
-    if st.button("Predict", type="primary", key="btn_single_predict"):
-        try:
-            input_df = pd.DataFrame([values])
-            result = state.model_service.predict(input_df)
-            pred = result.predictions[0]
-            proba = float(result.probabilities[0]) if result.probabilities is not None else None
-
-            positive_label = st.session_state.get('positive_label', 'positive')
-            is_threat = pred == positive_label
-
-            if is_threat:
-                st.error(f"**Prediction: {pred}** {'🚨 THREAT DETECTED' if is_threat else ''}")
-            else:
-                st.success(f"**Prediction: {pred}** ✅ Benign")
-
-            if proba is not None:
-                st.metric("Threat probability", f"{proba:.1%}")
-                st.progress(proba)
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Batch predictions (unchanged)
-# ---------------------------------------------------------------------------
-
-def render_predict_section(state):
-    """Render batch prediction controls."""
-    st.header("Batch Predictions")
-
-    # Option 1: Use features data
-    if state.has_features():
-        st.subheader("Predict on Generated Features")
-        if st.button("Predict on Features"):
-            try:
-                results = state.model_service.predict_dataframe(state.features_data)
-                state.predictions = results
-                st.success(f"Generated {len(results)} predictions!")
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-    # Option 2: Upload
-    st.subheader("Upload New Data")
-    new_file = st.file_uploader("Upload data", type=['xlsx', 'csv'])
-
-    if new_file:
-        if st.button("Predict on Upload"):
-            try:
-                with tempfile.NamedTemporaryFile(
-                    delete=False,
-                    suffix=new_file.name[-5:]
-                ) as f:
-                    f.write(new_file.getvalue())
-                    temp_path = f.name
-
-                df = state.data_service.load_features(temp_path)
-                results = state.model_service.predict_dataframe(df)
-                state.predictions = results
-                st.success(f"Generated {len(results)} predictions!")
-
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-
-def render_results_section(state):
-    """Render prediction results."""
-    st.markdown("---")
-    st.header("Results")
-
-    results = state.predictions
-    positive_label = st.session_state.get('positive_label', 'positive')
-
-    # Metrics
-    cols = st.columns(3)
-    pos_count = (results['prediction'] == positive_label).sum()
-    cols[0].metric("Positive Predictions", pos_count)
-    cols[1].metric("Total", len(results))
-    cols[2].metric("Positive Rate", f"{pos_count/len(results)*100:.1f}%")
-
-    # Top risks
-    st.subheader("High Risk IPs (Top 20)")
-    st.dataframe(results.head(20), width='stretch')
-
-    # Distribution
-    if 'probability' in results.columns:
-        st.subheader("Probability Distribution")
-        fig = px.histogram(
-            results, x='probability', nbins=50,
-            title='Distribution of Positive Probabilities'
-        )
-        st.plotly_chart(fig)
-
-    # Download
-    csv = results.to_csv()
-    st.download_button("Download Results", csv, "predictions.csv", "text/csv")

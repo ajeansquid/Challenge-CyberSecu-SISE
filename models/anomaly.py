@@ -10,6 +10,7 @@ from typing import List
 import joblib
 
 from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
 
 from core.interfaces import AnomalyDetector as AnomalyDetectorInterface
 from core.exceptions import ModelNotFittedError
@@ -146,3 +147,56 @@ class OneClassSVMModel(AnomalyDetectorInterface):
         if not self._fitted:
             raise ModelNotFittedError(self.name)
         return self._model.decision_function(X)
+
+
+class LocalOutlierFactorModel(AnomalyDetectorInterface):
+    """
+    Local Outlier Factor for anomaly detection.
+    Flags IPs anomalous relative to their local neighbourhood even when
+    globally rare behaviour is not present.  Complements IsolationForest.
+
+    Uses novelty=True so the model can score unseen data after fitting.
+    """
+
+    def __init__(
+        self,
+        n_neighbors: int = 20,
+        contamination: float = 0.1,
+        metric: str = 'minkowski',
+    ):
+        self._model = LocalOutlierFactor(
+            n_neighbors=n_neighbors,
+            contamination=contamination,
+            metric=metric,
+            novelty=True,   # required for predict/score on unseen data
+        )
+        self._fitted = False
+        self._feature_names: List[str] = []
+
+    @property
+    def name(self) -> str:
+        return "local_outlier_factor"
+
+    @property
+    def is_fitted(self) -> bool:
+        return self._fitted
+
+    def fit(self, X: np.ndarray) -> 'LocalOutlierFactorModel':
+        self._model.fit(X)
+        self._fitted = True
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Returns -1 for anomalies, 1 for normal points."""
+        if not self._fitted:
+            raise ModelNotFittedError(self.name)
+        return self._model.predict(X)
+
+    def score(self, X: np.ndarray) -> np.ndarray:
+        """Returns negative LOF scores; lower = more anomalous (consistent with IsolationForest)."""
+        if not self._fitted:
+            raise ModelNotFittedError(self.name)
+        return self._model.score_samples(X)
+
+    def get_anomaly_mask(self, X: np.ndarray) -> np.ndarray:
+        return self.predict(X) == -1
