@@ -75,8 +75,14 @@ class ModelService:
         X = df[feature_cols].values
         output = df.copy()
         output['is_anomaly'] = self._anomaly_detector.predict(X) == -1
-        output['anomaly_score'] = self._anomaly_detector.score(X)
-        return output.sort_values('anomaly_score')
+        raw_scores = self._anomaly_detector.score(X)
+        neg = -raw_scores
+        score_min, score_max = neg.min(), neg.max()
+        if score_max > score_min:
+            output['anomaly_score'] = (neg - score_min) / (score_max - score_min)
+        else:
+            output['anomaly_score'] = 0.0
+        return output.sort_values('anomaly_score', ascending=False)
 
     def apply_clusterer(
         self,
@@ -299,16 +305,28 @@ class ModelService:
 
         X = df[feature_cols].values
 
+        # OneClassSVM does not accept contamination — only pass it for models that do
+        _SUPPORTS_CONTAMINATION = {'isolation_forest', 'local_outlier_factor'}
+        if model_key in _SUPPORTS_CONTAMINATION:
+            model_params['contamination'] = contamination
+
         self._anomaly_detector = ModelRegistry.create(
-            model_key, contamination=contamination, **model_params
+            model_key, **model_params
         )
         self._anomaly_detector.fit(X)
 
         output = df.copy()
         output['is_anomaly'] = self._anomaly_detector.predict(X) == -1
-        output['anomaly_score'] = self._anomaly_detector.score(X)
+        raw_scores = self._anomaly_detector.score(X)  # lower = more anomalous for all models
+        # Normalize to [0, 1] where 1 = most anomalous (invert + min-max scale)
+        neg = -raw_scores
+        score_min, score_max = neg.min(), neg.max()
+        if score_max > score_min:
+            output['anomaly_score'] = (neg - score_min) / (score_max - score_min)
+        else:
+            output['anomaly_score'] = 0.0
 
-        return output.sort_values('anomaly_score')
+        return output.sort_values('anomaly_score', ascending=False)
 
     def compute_shap_values(
         self,

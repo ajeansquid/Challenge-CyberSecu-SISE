@@ -224,19 +224,24 @@ def _render_anomaly(state):
     det = state.model_service._anomaly_detector
     st.caption(f"Model: **{det.name}**")
 
+    # Cache key tied to the model so stale results from a different model are dropped
+    _cache_key = f"_anom_results_{det.name}"
+
     df, feature_cols = _pick_dataframe(state, "anom")
     if df is None or not feature_cols:
         return
 
     if st.button("Score for Anomalies", type="primary", key="anom_run_btn"):
+        # Clear stale SHAP values whenever we rescore
+        st.session_state.pop('_shap_values', None)
         try:
             result_df = state.model_service.apply_anomaly_detector(df, feature_cols)
-            st.session_state['_anom_results'] = result_df
+            st.session_state[_cache_key] = result_df
         except Exception as exc:
             st.error(f"Error: {exc}")
             st.code(traceback.format_exc())
 
-    result_df = st.session_state.get('_anom_results')
+    result_df = st.session_state.get(_cache_key)
     if result_df is not None:
         _show_anomaly_results(result_df, feature_cols, state)
 
