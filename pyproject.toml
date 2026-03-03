@@ -11,6 +11,7 @@ dependencies = [
     "jupyter-core>=5.9.1",
     "matplotlib>=3.10.8",
     "mistralai>=1.12.4",
+    "nbconvert",
     "plotly>=6.5.2",
     "pypdf>=6.7.5",
     "python-dotenv>=1.2.2",
