@@ -166,13 +166,18 @@ def render():
     total_rows = len(df_display)
     total_pages = max(1, (total_rows + rows_per_page - 1) // rows_per_page)
 
+    # Clamp saved page so buttons don't leave us out-of-bounds after filter changes
+    if 'data_browser_page' in st.session_state:
+        st.session_state.data_browser_page = max(1, min(st.session_state.data_browser_page, total_pages))
+
     col1, col2, col3 = st.columns([1, 3, 1])
     with col2:
         page = st.number_input(
             f"Page (1-{total_pages})",
             min_value=1,
             max_value=total_pages,
-            value=1
+            value=1,
+            key='data_browser_page',
         )
 
     start_idx = (page - 1) * rows_per_page

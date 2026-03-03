@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Analysis Dashboard Page"""
+"""Analysis Dashboard – read-only view of computed state (features, models, predictions)."""
 
 import streamlit as st
 import plotly.express as px
@@ -9,248 +9,302 @@ import numpy as np
 from app.state import get_state
 
 
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 def render():
-    """Render analysis dashboard."""
+    """Render the analysis dashboard."""
     state = get_state()
 
     st.title("Analysis Dashboard")
+    st.markdown(
+        "Read-only summary of everything computed so far. "
+        "Run **Feature Engineering** and **Model Training** first to populate this page."
+    )
 
-    # Priority: labeled_data > features_data > predictions
-    # labeled_data is the ground-truth CSV with all features intact.
-    # features_data may have zero-filled columns when action parsing failed.
-    # Merge in the prediction label when available so charts can colour by class.
+    # Resolve best available feature DataFrame (attach predictions if present)
+    df = _resolve_df(state)
+
+    tabs = st.tabs(["Overview", "Feature Distributions", "Unsupervised Results", "Supervised Results"])
+
+    with tabs[0]:
+        render_overview(state, df)
+
+    with tabs[1]:
+        if df is not None:
+            render_distributions(df)
+        else:
+            st.info("No feature data available yet.")
+
+    with tabs[2]:
+        render_unsupervised_results(state)
+
+    with tabs[3]:
+        render_supervised_results(state)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_df(state):
+    """Return best available feature DataFrame with predictions merged in."""
     df = None
     if state.has_labeled_data():
         df = state.labeled_data.copy()
-        st.info("Analyzing labeled data (supervised workflow available)")
-        if state.has_predictions() and 'prediction' in state.predictions.columns:
-            pred_series = state.predictions['prediction'].reindex(df.index)
-            df['prediction'] = pred_series
     elif state.has_features():
         df = state.features_data.copy()
-        st.info("Analyzing feature data — use **Clustering** and **Anomaly Detection** tabs for unsupervised analysis")
-        if state.has_predictions() and 'prediction' in state.predictions.columns:
-            pred_series = state.predictions['prediction'].reindex(df.index)
-            df['prediction'] = pred_series
-    elif state.has_predictions():
-        df = state.predictions
-        st.info("Analyzing prediction results")
+
+    if df is not None and state.has_predictions():
+        preds = state.predictions
+        if 'prediction' in preds.columns:
+            df['prediction'] = preds['prediction'].reindex(df.index)
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Tab: Overview
+# ---------------------------------------------------------------------------
+
+def render_overview(state, df):
+    """Pipeline status + high-level metrics."""
+    st.header("Pipeline Status")
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Raw rows loaded", f"{len(state.raw_data):,}" if state.has_raw_data() else "—")
+    col2.metric("IPs / feature rows", f"{len(df):,}" if df is not None else "—")
+
+    unsup = state.unsupervised_results
+    if unsup:
+        result_df = unsup.get('result_df')
+        if unsup['type'] == 'anomaly' and result_df is not None:
+            n = result_df['is_anomaly'].sum()
+            col3.metric("Anomalies detected", f"{n:,}")
+        elif unsup['type'] == 'clustering' and result_df is not None:
+            col3.metric("Clusters", result_df['cluster'].nunique())
     else:
-        st.warning(
-            "No data available for analysis. Use one of these workflows:\n"
-            "- **Unsupervised**: Data Upload → Feature Engineering → Analysis Dashboard\n"
-            "- **Supervised**: Load labeled data with 'risk' column → Model Training → Predictions"
-        )
-        return
+        col3.metric("Unsupervised model", "—")
 
-    render_overview(df)
+    tr = state.training_results
+    if tr and tr.get('type') == 'supervised':
+        cv = tr.get('cv', {})
+        scorer = cv.get('scoring', 'score')
+        col4.metric(f"CV {scorer}", f"{cv.get('mean', 0):.3f} ± {cv.get('std', 0):.3f}")
+    else:
+        col4.metric("Supervised model", "—")
 
-    tabs = st.tabs(["Distribution", "Correlation", "Clustering", "Anomaly Detection"])
+    if df is not None:
+        st.markdown("---")
+        st.header("Feature Summary")
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Features", len(numeric_cols))
+        if 'total_flows' in df.columns:
+            c2.metric("Total flows", f"{df['total_flows'].sum():,}")
+        if 'deny' in df.columns:
+            c3.metric("Total denies", f"{df['deny'].sum():,}")
+        if 'prediction' in df.columns:
+            pos = (df['prediction'] == 'positive').sum()
+            c4.metric("Predicted threats", f"{pos:,}")
 
-    with tabs[0]:
-        render_distribution(df)
-
-    with tabs[1]:
-        render_correlation(df)
-
-    with tabs[2]:
-        render_clustering(state, df)
-
-    with tabs[3]:
-        render_anomaly(state, df)
-
-
-def render_overview(df):
-    """Render overview metrics."""
-    st.header("Overview")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-
-    cols = st.columns(4)
-    cols[0].metric("Total IPs", len(df))
-
-    if 'total_flows' in df.columns:
-        cols[1].metric("Total Accesses", f"{df['total_flows'].sum():,}")
-    if 'deny' in df.columns:
-        cols[2].metric("Total Denies", f"{df['deny'].sum():,}")
-    if 'prediction' in df.columns:
-        pos = (df['prediction'] == 'positive').sum()
-        cols[3].metric("Threats", pos)
+        with st.expander("Feature statistics"):
+            st.dataframe(df.describe(), width='stretch')
 
 
-def render_distribution(df):
-    """Render distribution analysis."""
-    st.header("Distribution Analysis")
+# ---------------------------------------------------------------------------
+# Tab: Feature Distributions
+# ---------------------------------------------------------------------------
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    feature = st.selectbox("Feature", numeric_cols, key='dist_feat')
+@st.fragment
+def render_distributions(df):
+    """Histograms and box plots, optionally split by prediction/risk label."""
+    st.header("Feature Distributions")
+
+    numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
+    feature = st.selectbox("Feature", numeric_cols, key='dash_dist_feat')
 
     col1, col2 = st.columns(2)
-
     with col1:
-        fig = px.histogram(df, x=feature, nbins=50, title=f'{feature} Distribution')
-        st.plotly_chart(fig)
-
+        fig = px.histogram(df, x=feature, nbins=50, title=f'{feature} — histogram')
+        st.plotly_chart(fig, width='stretch')
     with col2:
-        fig = px.box(df, y=feature, title=f'{feature} Box Plot')
-        st.plotly_chart(fig)
+        fig = px.box(df, y=feature, title=f'{feature} — box plot')
+        st.plotly_chart(fig, width='stretch')
 
-    # By class if available
-    class_col = None
-    if 'prediction' in df.columns:
-        class_col = 'prediction'
-    elif 'risk' in df.columns:
-        class_col = 'risk'
-
+    # Split by label if available
+    class_col = next((c for c in ('prediction', 'risk') if c in df.columns), None)
     if class_col:
         st.subheader(f"By {class_col}")
         fig = px.histogram(
-            df, x=feature, color=class_col,
-            barmode='overlay', title=f'{feature} by {class_col}'
+            df, x=feature, color=class_col, barmode='overlay',
+            title=f'{feature} by {class_col}',
+            color_discrete_map={'positive': '#e74c3c', 'negative': '#2ecc71',
+                                 'anomaly': '#e74c3c', 'normal': '#2ecc71'}
         )
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, width='stretch')
 
 
-def render_correlation(df):
-    """Render correlation analysis."""
-    st.header("Correlation Analysis")
+# ---------------------------------------------------------------------------
+# Tab: Unsupervised Results
+# ---------------------------------------------------------------------------
 
-    numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
-    selected = st.multiselect("Features", numeric_cols, default=numeric_cols[:8])
+def render_unsupervised_results(state):
+    """Read-only view of state.unsupervised_results."""
+    st.header("Unsupervised Results")
 
-    if len(selected) >= 2:
-        # Filter out constant columns (zero variance) which cause NaN correlations
-        df_selected = df[selected].copy()
-        variances = df_selected.var()
-        constant_cols = variances[variances == 0].index.tolist()
-        valid_cols = [c for c in selected if c not in constant_cols]
+    unsup = state.unsupervised_results
+    if not unsup:
+        st.info("No unsupervised model trained yet. Go to **Model Training → Unsupervised** tab.")
+        return
 
-        if constant_cols:
-            st.warning(f"Excluded constant columns (zero variance): {', '.join(constant_cols)}")
+    model_key  = unsup.get('model_key', '—')
+    features   = unsup.get('features', [])
+    result_df  = unsup.get('result_df')
+    model_type = unsup.get('type')
 
-        if len(valid_cols) < 2:
-            st.error("Need at least 2 non-constant columns for correlation analysis.")
-            return
+    st.caption(f"Model: `{model_key}` · Features: {', '.join(features)}")
 
-        # Compute correlation on valid columns only
-        corr = df[valid_cols].corr()
+    if result_df is None:
+        st.warning("Result data not found in state.")
+        return
 
-        # Replace any remaining NaN with 0 for display
-        corr = corr.fillna(0)
-
-        fig = px.imshow(
-            corr, title="Correlation Matrix",
-            color_continuous_scale='RdBu_r', text_auto='.2f',
-            zmin=-1, zmax=1
-        )
-        st.plotly_chart(fig)
-
-        # Show highly correlated pairs (excluding diagonal)
-        if st.checkbox("Show highly correlated pairs (|r| > 0.8)"):
-            pairs = []
-            for i, col1 in enumerate(valid_cols):
-                for col2 in valid_cols[i+1:]:
-                    r = corr.loc[col1, col2]
-                    if abs(r) > 0.8:
-                        pairs.append({'Feature 1': col1, 'Feature 2': col2, 'Correlation': f"{r:.3f}"})
-            if pairs:
-                st.dataframe(pairs, width='stretch')
-            else:
-                st.info("No highly correlated pairs found.")
-
-        # Scatter
-        st.subheader("Scatter Plot")
-        col1, col2 = st.columns(2)
-        x_feat = col1.selectbox("X", valid_cols, key='scatter_x')
-        y_feat = col2.selectbox("Y", valid_cols, index=min(1, len(valid_cols)-1), key='scatter_y')
-
-        color_by = None
-        if 'prediction' in df.columns:
-            color_by = 'prediction'
-        elif 'risk' in df.columns:
-            color_by = 'risk'
-
-        df_plot = df.reset_index(drop=True)
-        fig = px.scatter(
-            df_plot, x=x_feat, y=y_feat, color=color_by,
-            title=f'{x_feat} vs {y_feat}',
-            hover_data=[df_plot.columns[0]]
-        )
-        st.plotly_chart(fig)
+    if model_type == 'anomaly':
+        _render_anomaly_results(result_df, features)
+    elif model_type == 'clustering':
+        _render_clustering_results(result_df, features, unsup.get('n_clusters', '?'))
+    else:
+        st.warning(f"Unknown result type: {model_type}")
 
 
-def render_clustering(state, df):
-    """Render clustering analysis."""
-    st.header("Clustering")
+@st.fragment
+def _render_anomaly_results(result_df, features):
+    n_anomalies = result_df['is_anomaly'].sum()
+    n_total = len(result_df)
 
-    numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
-    default_feats = ['total_flows', 'unique_dst_ips', 'unique_dst_ports']
-    default = [f for f in default_feats if f in numeric_cols] or numeric_cols[:3]
+    cols = st.columns(4)
+    cols[0].metric("Total IPs", f"{n_total:,}")
+    cols[1].metric("Anomalies", f"{n_anomalies:,}")
+    cols[2].metric("Normal", f"{n_total - n_anomalies:,}")
+    cols[3].metric("Anomaly rate", f"{n_anomalies / n_total * 100:.1f}%")
 
-    features = st.multiselect("Features", numeric_cols, default=default, key='cluster_feats')
-    n_clusters = st.slider("Clusters", 2, 10, 3)
-
-    if st.button("Run Clustering") and len(features) >= 2:
-        try:
-            # Find optimal K
-            inertias = state.model_service.find_optimal_clusters(df, features)
-
-            st.subheader("Elbow Plot")
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=list(inertias.keys()),
-                y=list(inertias.values()),
-                mode='lines+markers'
-            ))
-            fig.update_layout(xaxis_title="K", yaxis_title="Inertia")
-            st.plotly_chart(fig)
-
-            # Cluster
-            result = state.model_service.cluster(df, features, n_clusters)
-
-            st.subheader("Clusters")
-            fig = px.scatter(
-                result, x=features[0], y=features[1],
-                color='cluster', title='Cluster Visualization'
-            )
-            st.plotly_chart(fig)
-
-            st.subheader("Cluster Stats")
-            stats = result.groupby('cluster')[features].mean()
-            st.dataframe(stats, width='stretch')
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-
-
-def render_anomaly(state, df):
-    """Render anomaly detection."""
-    st.header("Anomaly Detection")
-
-    numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
-    features = st.multiselect(
-        "Features", numeric_cols,
-        default=numeric_cols[:5], key='anomaly_feats'
+    fig = px.histogram(
+        result_df, x='anomaly_score', color='is_anomaly', nbins=50,
+        title='Anomaly Score Distribution',
+        color_discrete_map={True: '#e74c3c', False: '#2ecc71'}
     )
-    contamination = st.slider("Anomaly Rate", 0.01, 0.5, 0.1)
+    st.plotly_chart(fig, width='stretch')
 
-    if st.button("Detect Anomalies") and features:
-        try:
-            result = state.model_service.detect_anomalies(
-                df, features, contamination
+    if len(features) >= 2:
+        x, y = features[0], features[1]
+        fig = px.scatter(
+            result_df.reset_index(), x=x, y=y,
+            color=result_df['is_anomaly'].map({True: 'Anomaly', False: 'Normal'}),
+            title=f'Anomalies — {x} vs {y}',
+            color_discrete_map={'Anomaly': '#e74c3c', 'Normal': '#2ecc71'},
+            opacity=0.6
+        )
+        st.plotly_chart(fig, width='stretch')
+
+    st.subheader("Top anomalous IPs")
+    anomalies = result_df[result_df['is_anomaly']].sort_values('anomaly_score').head(50)
+    st.dataframe(anomalies[features + ['anomaly_score']], hide_index=True, width='stretch')
+
+
+@st.fragment
+def _render_clustering_results(result_df, features, n_clusters):
+    cluster_counts = result_df['cluster'].value_counts().sort_index()
+    cols = st.columns(min(len(cluster_counts), 6))
+    for i, (cluster, count) in enumerate(cluster_counts.items()):
+        if i < 6:
+            cols[i].metric(f"Cluster {cluster}", f"{count:,}")
+
+    if len(features) >= 2:
+        x, y = features[0], features[1]
+        fig = px.scatter(
+            result_df.reset_index(), x=x, y=y,
+            color=result_df['cluster'].astype(str),
+            title=f'Clusters — {x} vs {y}',
+            color_discrete_sequence=px.colors.qualitative.Set1,
+            opacity=0.7
+        )
+        st.plotly_chart(fig, width='stretch')
+
+    st.subheader("Cluster statistics (mean features)")
+    cluster_stats = result_df.groupby('cluster')[features].mean()
+    st.dataframe(cluster_stats, width='stretch')
+
+    if len(features) >= 3:
+        st.subheader("Cluster profiles")
+        normalized = cluster_stats.copy()
+        for col in features:
+            max_val = normalized[col].max()
+            if max_val > 0:
+                normalized[col] /= max_val / 100
+
+        fig = go.Figure()
+        for cid in normalized.index:
+            fig.add_trace(go.Scatterpolar(
+                r=[normalized.loc[cid, f] for f in features],
+                theta=features, fill='toself', name=f'Cluster {cid}'
+            ))
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+            title="Normalized Cluster Profiles"
+        )
+        st.plotly_chart(fig, width='stretch')
+
+
+# ---------------------------------------------------------------------------
+# Tab: Supervised Results
+# ---------------------------------------------------------------------------
+
+def render_supervised_results(state):
+    """Read-only view of state.training_results."""
+    st.header("Supervised Results")
+
+    tr = state.training_results
+    if not tr or tr.get('type') != 'supervised':
+        st.info("No supervised model trained yet. Go to **Model Training → Supervised** tab.")
+        return
+
+    cv = tr.get('cv', {})
+
+    scorer = cv.get('scoring', 'score')
+    cols = st.columns(4)
+    cols[0].metric(f"CV {scorer} (mean)", f"{cv.get('mean', 0):.4f}")
+    cols[1].metric("CV std", f"{cv.get('std', 0):.4f}")
+    cols[2].metric("CV method", cv.get('cv_method', '—'))
+    cols[3].metric("Features used", len(cv.get('features_used', [])))
+
+    with st.expander("Per-fold scores"):
+        for i, s in enumerate(cv.get('scores', []), 1):
+            st.write(f"Fold {i}: {s:.4f}")
+
+    # Feature importance from active pipeline (if model still in memory)
+    try:
+        importance = state.model_service.get_feature_importance()
+        if importance is not None and not importance.empty:
+            st.subheader("Feature Importance")
+            fig = px.bar(
+                importance.head(15),
+                x='importance', y='feature', orientation='h',
+                title='Top 15 Features by Importance'
             )
+            st.plotly_chart(fig, width='stretch')
+    except Exception:
+        pass
 
-            n_anomalies = result['is_anomaly'].sum()
-            st.metric("Detected Anomalies", n_anomalies)
-
-            fig = px.histogram(
-                result, x='anomaly_score', color='is_anomaly',
-                title='Anomaly Score Distribution'
+    # Predictions summary if available
+    if state.has_predictions():
+        st.subheader("Prediction Summary")
+        preds = state.predictions
+        if 'prediction' in preds.columns:
+            counts = preds['prediction'].value_counts()
+            fig = px.pie(
+                values=counts.values, names=counts.index,
+                title='Prediction Distribution',
+                color_discrete_map={'positive': '#e74c3c', 'negative': '#2ecc71'}
             )
-            st.plotly_chart(fig)
-
-            st.subheader("Anomalous IPs")
-            anomalies = result[result['is_anomaly']].sort_values('anomaly_score')
-            st.dataframe(anomalies, width='stretch')
-
-        except Exception as e:
-            st.error(f"Error: {e}")
+            st.plotly_chart(fig, width='stretch')

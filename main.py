@@ -48,10 +48,10 @@ def main():
                 "IP Visualization",
                 "Statistics",
                 "Feature Engineering",
+                "Dim. Reduction",
                 "Model Training",
                 "Predictions",
                 "Analysis Dashboard",
-                "Dim. Reduction",
                 "LLM Assistant"
             ]
         )

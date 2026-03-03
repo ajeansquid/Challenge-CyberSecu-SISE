@@ -11,13 +11,14 @@ from app.state import get_state
 from utils.helpers import normalize_log_columns
 
 
-# University IP range (internal network)
-UNIVERSITY_PREFIX = "159.84."
+# Internal network prefix (destination server range)
+# This is the IP range of the protected server(s) in the firewall logs
+INTERNAL_PREFIX = "159.84."
 
 
 def is_external_ip(ip: str) -> bool:
-    """Check if an IP is external (not in university range)."""
-    return not str(ip).startswith(UNIVERSITY_PREFIX)
+    """Check if an IP is external (not in the internal network range)."""
+    return not str(ip).startswith(INTERNAL_PREFIX)
 
 
 def get_data_from_state():
@@ -95,13 +96,14 @@ def render_summary_metrics(df: pd.DataFrame):
     denies = (df['action'] == 'DENY').sum()
     tcp_flows = (df['proto'] == 'TCP').sum()
     udp_flows = (df['proto'] == 'UDP').sum()
-    external_ips = df['ipsrc'].apply(is_external_ip).sum()
+    _ext_mask = ~df['ipsrc'].astype(str).str.startswith(INTERNAL_PREFIX)
+    external_ips = _ext_mask.sum()
 
     col1.metric("PERMIT", f"{permits:,}")
     col2.metric("DENY", f"{denies:,}")
     col3.metric("TCP Flows", f"{tcp_flows:,}")
     col4.metric("UDP Flows", f"{udp_flows:,}")
-    col5.metric("External Src IPs", f"{df[df['ipsrc'].apply(is_external_ip)]['ipsrc'].nunique():,}")
+    col5.metric("External Src IPs", f"{df.loc[_ext_mask, 'ipsrc'].nunique():,}")
 
 
 def render_top_source_ips(df: pd.DataFrame):
@@ -185,12 +187,13 @@ def render_top_ports_permit(df: pd.DataFrame):
     st.plotly_chart(fig, width='stretch')
 
 
+@st.fragment
 def render_external_ips(df: pd.DataFrame):
-    """Render list of external IPs (not in university range)."""
-    st.subheader(f"External Source IPs (not {UNIVERSITY_PREFIX}x.x)")
+    """Render list of external IPs (not in the internal network range)."""
+    st.subheader(f"External Source IPs (not {INTERNAL_PREFIX}x.x)")
 
     # Filter external IPs
-    external_df = df[df['ipsrc'].apply(is_external_ip)]
+    external_df = df[~df['ipsrc'].astype(str).str.startswith(INTERNAL_PREFIX)]
 
     external_stats = external_df.groupby('ipsrc').agg(
         total_flows=('ipsrc', 'count'),
@@ -209,7 +212,7 @@ def render_external_ips(df: pd.DataFrame):
 
     external_stats = external_stats.nlargest(20, sort_by)
 
-    st.write(f"Showing top 20 of {df[df['ipsrc'].apply(is_external_ip)]['ipsrc'].nunique():,} external IPs")
+    st.write(f"Showing top 20 of {(~df['ipsrc'].astype(str).str.startswith(INTERNAL_PREFIX)).sum():,} external flows / {df[~df['ipsrc'].astype(str).str.startswith(INTERNAL_PREFIX)]['ipsrc'].nunique():,} unique IPs")
 
     # Display as table
     st.dataframe(

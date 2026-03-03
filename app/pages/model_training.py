@@ -113,6 +113,125 @@ def _render_hyperparams(model_key: str, key_prefix: str = 'hp') -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Save / Load helpers (used by both tabs)
+# ---------------------------------------------------------------------------
+
+def _render_supervised_save_load(state) -> None:
+    """Save/load expander for the active supervised pipeline."""
+    with st.expander("💾 Save / Load Model", expanded=False):
+        # ── Save ────────────────────────────────────────────────────────────
+        st.markdown("**Save trained model**")
+        has_model = (
+            state.training_results is not None
+            and state.training_results.get('type') == 'supervised'
+        )
+        if has_model:
+            info = state.training_results.get('train', {})
+            st.caption(
+                f"Active: **{info.get('model', '–')}** "
+                f"({len(info.get('features', []))} features)"
+            )
+        else:
+            st.caption("Train a model first to enable saving.")
+
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            save_name = st.text_input(
+                "Filename (no extension)", value="supervised_model", key='sup_save_name'
+            )
+        with col2:
+            fmt = st.selectbox(
+                "Format", ['joblib', 'skops', 'pkl'], key='sup_save_fmt',
+                help=(
+                    "**skops** — secure JSON-based format; safe to share/deploy. "
+                    "Requires `uv add skops`.\n\n"
+                    "**joblib** — fast binary pickle; for local caches only.\n\n"
+                    "**pkl** — standard pickle; avoid unless required."
+                )
+            )
+
+        if st.button("Save Model", disabled=not has_model, key='sup_save_btn'):
+            try:
+                path = state.model_service.save_model(save_name, fmt=fmt)
+                st.success(f"Saved → `{path}`")
+            except Exception as exc:
+                st.error(f"Save failed: {exc}")
+
+        st.divider()
+
+        # ── Load ────────────────────────────────────────────────────────────
+        st.markdown("**Load saved model**")
+        saved = state.model_service.list_saved_models()
+        if not saved:
+            st.caption("No saved models found in the models directory.")
+        else:
+            options = {f"{m['name']}  [{m['format']}]": m['name'] for m in saved}
+            chosen = st.selectbox("Choose model", list(options.keys()), key='sup_load_select')
+            if st.button("Load Model", key='sup_load_btn'):
+                try:
+                    state.model_service.load_model(options[chosen])
+                    st.success(f"Loaded `{options[chosen]}`")
+                except Exception as exc:
+                    st.error(f"Load failed: {exc}")
+
+
+def _render_unsupervised_save_load(state) -> None:
+    """Save/load expander for the active anomaly detector or clusterer."""
+    with st.expander("💾 Save / Load Model", expanded=False):
+        # ── Save ────────────────────────────────────────────────────────────
+        st.markdown("**Save trained model**")
+        has_model = state.unsupervised_results is not None
+        if has_model:
+            info = state.unsupervised_results
+            st.caption(
+                f"Active: **{info.get('model_key', '–')}** "
+                f"({info.get('type', '?')})"
+            )
+        else:
+            st.caption("Train a model first to enable saving.")
+
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            save_name = st.text_input(
+                "Filename (no extension)", value="unsupervised_model", key='unsup_save_name'
+            )
+        with col2:
+            fmt = st.selectbox(
+                "Format", ['joblib', 'skops', 'pkl'], key='unsup_save_fmt',
+                help=(
+                    "**skops** — secure JSON-based format; safe to share/deploy. "
+                    "Requires `uv add skops`.\n\n"
+                    "**joblib** — fast binary pickle; for local caches only.\n\n"
+                    "**pkl** — standard pickle; avoid unless required."
+                )
+            )
+
+        if st.button("Save Model", disabled=not has_model, key='unsup_save_btn'):
+            try:
+                path = state.model_service.save_unsupervised(save_name, fmt=fmt)
+                st.success(f"Saved → `{path}`")
+            except Exception as exc:
+                st.error(f"Save failed: {exc}")
+
+        st.divider()
+
+        # ── Load ────────────────────────────────────────────────────────────
+        st.markdown("**Load saved model**")
+        saved = state.model_service.list_saved_models()
+        if not saved:
+            st.caption("No saved models found in the models directory.")
+        else:
+            options = {f"{m['name']}  [{m['format']}]": m['name'] for m in saved}
+            chosen = st.selectbox("Choose model", list(options.keys()), key='unsup_load_select')
+            if st.button("Load Model", key='unsup_load_btn'):
+                try:
+                    state.model_service.load_unsupervised(options[chosen])
+                    st.success(f"Loaded `{options[chosen]}`")
+                except Exception as exc:
+                    st.error(f"Load failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Main Page
 # ---------------------------------------------------------------------------
 
@@ -316,6 +435,9 @@ def render_supervised_training_section(state, df):
             import traceback
             st.code(traceback.format_exc())
 
+    st.markdown("---")
+    _render_supervised_save_load(state)
+
 
 # ---------------------------------------------------------------------------
 # Unsupervised Tab
@@ -490,6 +612,9 @@ def render_anomaly_training_section(state, df):
             import traceback
             st.code(traceback.format_exc())
 
+    st.markdown("---")
+    _render_unsupervised_save_load(state)
+
 
 def render_clustering_training_section(state, df):
     """Render clustering training."""
@@ -596,3 +721,5 @@ def render_clustering_training_section(state, df):
             st.error(f"Error: {e}")
             import traceback
             st.code(traceback.format_exc())
+    st.markdown("---")
+    _render_unsupervised_save_load(state)

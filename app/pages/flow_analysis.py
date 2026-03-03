@@ -262,7 +262,7 @@ def render_time_series(df: pd.DataFrame):
         index=1
     )
 
-    freq_map = {"Hour": "H", "Day": "D", "Week": "W"}
+    freq_map = {"Hour": "h", "Day": "D", "Week": "W"}
     freq = freq_map[granularity]
 
     # Group by time and action

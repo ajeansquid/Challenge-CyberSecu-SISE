@@ -8,8 +8,9 @@ End-to-end pipeline for training and prediction.
 import numpy as np
 import pandas as pd
 from typing import List, Optional, Dict, Any, Tuple
-import joblib
 from pathlib import Path
+
+from .io import save_model_file, load_model_file
 
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
@@ -295,7 +296,16 @@ class ModelPipeline:
         return X, y
 
     def save(self, path: str) -> None:
-        """Save pipeline to file."""
+        """
+        Save pipeline to file.
+
+        The format is chosen by the file extension:
+          .skops   — secure, recommended for sharing / deployment
+          .joblib  — fast binary cache (default when called from ModelService)
+          .pkl     — standard pickle
+
+        See ``models.io`` for a full explanation of the security trade-offs.
+        """
         state = {
             'model': self._model,
             'scaler': self._scaler,
@@ -307,13 +317,12 @@ class ModelPipeline:
             'scale_features': self.scale_features,
             'fitted': self._fitted
         }
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(state, path)
+        save_model_file(state, path)
 
     @classmethod
     def load(cls, path: str) -> 'ModelPipeline':
-        """Load pipeline from file."""
-        state = joblib.load(path)
+        """Load pipeline from file (supports .skops, .joblib, .pkl)."""
+        state = load_model_file(path)
 
         pipeline = cls.__new__(cls)
         pipeline._model = state['model']

@@ -9,6 +9,7 @@ from .classifiers import (
 from .anomaly import IsolationForestModel
 from .clustering import KMeansModel
 from .pipeline import ModelPipeline
+from .io import save_model_file, load_model_file, audit_skops_file, skops_available
 
 __all__ = [
     'ModelRegistry',
@@ -19,5 +20,9 @@ __all__ = [
     'GradientBoostingModel',
     'IsolationForestModel',
     'KMeansModel',
-    'ModelPipeline'
+    'ModelPipeline',
+    'save_model_file',
+    'load_model_file',
+    'audit_skops_file',
+    'skops_available',
 ]

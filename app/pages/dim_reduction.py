@@ -68,27 +68,40 @@ def _resolve_dataframe(state):
     """Return the most relevant dataframe available in state.
 
     Priority: labeled_data > features_data > predictions > raw_data.
-    When labeled_data is used, prediction labels are merged in if available.
+    Merges in prediction labels and unsupervised results (cluster / is_anomaly)
+    if available, so they can be used as colour columns in the projection.
     """
     if state.has_labeled_data():
         df = state.labeled_data.copy()
-        if state.has_predictions() and 'prediction' in state.predictions.columns:
-            df['prediction'] = state.predictions['prediction'].reindex(df.index)
         st.info("Using labeled data")
-        return df
-    if state.has_features():
+    elif state.has_features():
         df = state.features_data.copy()
-        if state.has_predictions() and 'prediction' in state.predictions.columns:
-            df['prediction'] = state.predictions['prediction'].reindex(df.index)
         st.info("Using generated features")
-        return df
-    if state.has_predictions():
+    elif state.has_predictions():
         st.info("Using prediction results")
         return state.predictions
-    if state.has_raw_data():
+    elif state.has_raw_data():
         st.info("Using raw data")
         return state.raw_data
-    return None
+    else:
+        return None
+
+    # Merge supervised predictions (prediction / probability columns)
+    if state.has_predictions():
+        for col in ('prediction', 'probability'):
+            if col in state.predictions.columns:
+                df[col] = state.predictions[col].reindex(df.index)
+
+    # Merge unsupervised results (cluster or is_anomaly / anomaly_score)
+    unsup = getattr(state, 'unsupervised_results', None)
+    if unsup is not None:
+        result_df = unsup.get('result_df')
+        if result_df is not None:
+            for col in ('cluster', 'is_anomaly', 'anomaly_score'):
+                if col in result_df.columns:
+                    df[col] = result_df[col].reindex(df.index)
+
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +155,7 @@ def _render_controls(df, numeric_cols):
 
         params = _render_algo_params(algo, len(df))
 
-        # Sampling control for large datasets
+        # Sampling control
         st.markdown("---")
         if algo in ("t-SNE", "UMAP"):
             max_samples = st.slider(
@@ -154,8 +167,19 @@ def _render_controls(df, numeric_cols):
                 help="t-SNE and UMAP are slow on large datasets. Sampling speeds up computation."
             )
         else:
-            # PCA is fast, no need for sampling
-            max_samples = 0
+            # PCA is fast to compute but Plotly 3D rendering lags on large point clouds.
+            # Cap at 20 000 by default; set to 0 to disable.
+            max_samples = st.slider(
+                "Max samples for rendering (0 = all)",
+                min_value=0,
+                max_value=min(50000, len(df)),
+                value=min(20000, len(df)),
+                step=1000,
+                help=(
+                    "PCA computation is fast, but the 3D Plotly chart lags with many points. "
+                    "Set to 0 to plot all points (may be slow for > 20 000 rows)."
+                ),
+            )
 
     return selected_features, algo, n_dims, color_col, params, max_samples
 
@@ -176,7 +200,7 @@ def _render_algo_params(algo: str, n_samples: int) -> dict:
         params["learning_rate"] = st.slider(
             "Learning rate", 10.0, 1000.0, 200.0, step=10.0, key="tsne_lr"
         )
-        params["n_iter"] = st.slider(
+        params["max_iter"] = st.slider(
             "Iterations", 250, 2000, 500, step=250, key="tsne_iter"
         )
     elif algo == "UMAP":
@@ -205,7 +229,7 @@ def _compute_projection_cached(
     n_dims: int,
     perplexity: int = 30,
     learning_rate: float = 200.0,
-    n_iter: int = 500,
+    max_iter: int = 500,
     n_neighbors: int = 15,
     min_dist: float = 0.1,
     metric: str = "euclidean",
@@ -223,7 +247,7 @@ def _compute_projection_cached(
             n_components=n_dims,
             perplexity=min(perplexity, len(X_scaled) - 1),
             learning_rate=learning_rate,
-            n_iter=n_iter,
+            max_iter=max_iter,
             random_state=42,
             init='pca',
         )
@@ -265,7 +289,7 @@ def _compute_projection(df, features, algo, n_dims, params):
         n_dims,
         perplexity=params.get("perplexity", 30),
         learning_rate=params.get("learning_rate", 200.0),
-        n_iter=params.get("n_iter", 500),
+        max_iter=params.get("max_iter", 500),
         n_neighbors=params.get("n_neighbors", 15),
         min_dist=params.get("min_dist", 0.1),
         metric=params.get("metric", "euclidean"),
@@ -296,6 +320,7 @@ def _compute_projection(df, features, algo, n_dims, params):
 # Visualization
 # ---------------------------------------------------------------------------
 
+@st.fragment
 def _render_results(proj_df, n_dims, color_col, algo, explained, was_sampled, total_rows):
     """Render the projection results with interactive Plotly charts."""
     if proj_df.empty:
@@ -349,8 +374,24 @@ def _render_results(proj_df, n_dims, color_col, algo, explained, was_sampled, to
         st.plotly_chart(fig, width='stretch')
 
     # --- Data table ---
+    dim_cols = [c for c in proj_df.columns if c.startswith("Dim")]
+    _meta = {'cluster', 'is_anomaly', 'anomaly_score', 'prediction', 'probability', 'risk'}
+    label_cols = [
+        c for c in proj_df.columns
+        if c not in dim_cols
+        and (proj_df[c].dtype == object or c in _meta)
+    ]
     with st.expander("View projected data"):
-        st.dataframe(proj_df, width='stretch')
+        st.caption(
+            "Dim columns are computed locally for visualization only — "
+            "they are **not** written back to the feature data in state."
+        )
+        tab_coords, tab_full = st.tabs(["Coordinates + labels", "Full joined table"])
+        with tab_coords:
+            show_cols = dim_cols + [c for c in label_cols if c in proj_df.columns]
+            st.dataframe(proj_df[show_cols], use_container_width=True)
+        with tab_full:
+            st.dataframe(proj_df, use_container_width=True)
 
     # --- Download ---
     csv = proj_df.to_csv(index=False)

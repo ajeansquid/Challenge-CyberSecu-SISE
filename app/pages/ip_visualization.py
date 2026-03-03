@@ -86,6 +86,7 @@ def render():
         render_ip_comparison(ip_stats, df)
 
 
+@st.fragment
 def render_scatter_plot(ip_stats: pd.DataFrame):
     """Render interactive scatter plot of IPs."""
     st.subheader("IP Behavior Scatter Plot")
@@ -171,6 +172,7 @@ def render_scatter_plot(ip_stats: pd.DataFrame):
     )
 
 
+@st.fragment
 def render_ip_browser(ip_stats: pd.DataFrame, df: pd.DataFrame):
     """Render IP browser with slider."""
     st.subheader("IP Browser")
@@ -246,6 +248,7 @@ def render_ip_browser(ip_stats: pd.DataFrame, df: pd.DataFrame):
         st.plotly_chart(fig, width='stretch')
 
 
+@st.fragment
 def render_ip_details(ip_stats: pd.DataFrame, df: pd.DataFrame):
     """Render detailed view for a specific IP."""
     st.subheader("IP Details Lookup")
@@ -350,6 +353,7 @@ def render_ip_details(ip_stats: pd.DataFrame, df: pd.DataFrame):
             st.dataframe(ip_flows.head(100), width='stretch', hide_index=True)
 
 
+@st.fragment
 def render_ip_comparison(ip_stats: pd.DataFrame, df: pd.DataFrame):
     """Compare multiple IPs side by side."""
     st.subheader("IP Comparison")

@@ -10,6 +10,8 @@ import numpy as np
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 
+from models.io import save_model_file, load_model_file, skops_available
+
 from core.interfaces import PredictionResult
 from core.config import get_config
 from core.exceptions import ServiceError
@@ -34,6 +36,77 @@ class ModelService:
     def active_model(self) -> Optional[ModelPipeline]:
         """Get active model pipeline."""
         return self._active_pipeline
+
+    @property
+    def has_fitted_anomaly_detector(self) -> bool:
+        """True if an anomaly detector is loaded and fitted."""
+        return self._anomaly_detector is not None and self._anomaly_detector.is_fitted
+
+    @property
+    def has_fitted_clusterer(self) -> bool:
+        """True if a clusterer is loaded and fitted."""
+        return self._clusterer is not None and self._clusterer.is_fitted
+
+    def apply_anomaly_detector(
+        self,
+        df: pd.DataFrame,
+        feature_cols: List[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Score new data with the **already-fitted** anomaly detector.
+        Does NOT refit — call ``detect_anomalies()`` if you want fit+predict.
+
+        Args:
+            df:           Input DataFrame.
+            feature_cols: Columns to use.  Defaults to all numeric columns.
+
+        Returns:
+            DataFrame with ``is_anomaly`` (bool) and ``anomaly_score`` (float) columns.
+        """
+        if not self.has_fitted_anomaly_detector:
+            raise ServiceError(
+                "No fitted anomaly detector.  "
+                "Train one in Model Training or load a saved model first.",
+                "model_service",
+            )
+        if feature_cols is None:
+            feature_cols = list(df.select_dtypes(include=[np.number]).columns)
+
+        X = df[feature_cols].values
+        output = df.copy()
+        output['is_anomaly'] = self._anomaly_detector.predict(X) == -1
+        output['anomaly_score'] = self._anomaly_detector.score(X)
+        return output.sort_values('anomaly_score')
+
+    def apply_clusterer(
+        self,
+        df: pd.DataFrame,
+        feature_cols: List[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Assign new data to clusters using the **already-fitted** clusterer.
+        Does NOT refit — call ``cluster()`` if you want fit+predict.
+
+        Args:
+            df:           Input DataFrame.
+            feature_cols: Columns to use.  Defaults to all numeric columns.
+
+        Returns:
+            DataFrame with a ``cluster`` column.
+        """
+        if not self.has_fitted_clusterer:
+            raise ServiceError(
+                "No fitted clusterer.  "
+                "Train one in Model Training or load a saved model first.",
+                "model_service",
+            )
+        if feature_cols is None:
+            feature_cols = list(df.select_dtypes(include=[np.number]).columns)
+
+        X = df[feature_cols].values
+        output = df.copy()
+        output['cluster'] = self._clusterer.predict(X)
+        return output
 
     def list_available_models(
         self,
@@ -287,50 +360,122 @@ class ModelService:
 
         return KMeansModel.find_optimal_k(X, k_range)
 
-    def save_model(self, name: str) -> Path:
+    def save_model(self, name: str, fmt: str = 'joblib') -> Path:
         """
-        Save active model to file.
+        Save the active supervised pipeline to disk.
 
         Args:
-            name: Model name
+            name: Filename stem (e.g. ``'my_classifier'``).
+            fmt:  Serialization format.
+
+                  * ``'skops'``  — Secure JSON-based format.  Recommended for
+                    any model you share, deploy to production, or keep in git.
+                    Requires ``skops`` (``uv add skops``).
+                  * ``'joblib'`` — Fast binary pickle.  Good for local caches
+                    you control end-to-end.  **Cannot be safely loaded from an
+                    untrusted source** (pickle executes arbitrary code).
+                  * ``'pkl'``    — Standard pickle.  Avoid unless required by
+                    an external tool.
 
         Returns:
-            Path to saved model
+            ``Path`` to the saved file.
         """
         if self._active_pipeline is None:
-            raise ServiceError(
-                "No active model to save.",
-                "model_service"
-            )
+            raise ServiceError("No active model to save.", "model_service")
 
+        ext = fmt.lstrip('.')
         self.models_dir.mkdir(parents=True, exist_ok=True)
-        path = self.models_dir / f"{name}.joblib"
+        path = self.models_dir / f"{name}.{ext}"
 
         self._active_pipeline.save(str(path))
         return path
 
     def load_model(self, name: str) -> None:
         """
-        Load model from file.
+        Load a supervised pipeline from disk.
+
+        Probes for ``.skops``, ``.joblib``, and ``.pkl`` in that order so you
+        can upgrade to a more secure format without changing call sites.
+        """
+        for ext in ('.skops', '.joblib', '.pkl'):
+            path = self.models_dir / f"{name}{ext}"
+            if path.exists():
+                self._active_pipeline = ModelPipeline.load(str(path))
+                return
+        raise ServiceError(
+            f"No saved model named '{name}' found in {self.models_dir}",
+            "model_service"
+        )
+
+    def save_unsupervised(self, name: str, fmt: str = 'joblib') -> Path:
+        """
+        Save the active anomaly detector or clusterer to disk.
 
         Args:
-            name: Model name
-        """
-        path = self.models_dir / f"{name}.joblib"
+            name: Filename stem.
+            fmt:  ``'skops'``, ``'joblib'``, or ``'pkl'``.
 
-        if not path.exists():
+        Returns:
+            ``Path`` to the saved file.
+        """
+        model = self._anomaly_detector or self._clusterer
+        if model is None:
             raise ServiceError(
-                f"Model not found: {path}",
+                "No fitted unsupervised model to save.  "
+                "Run detect_anomalies() or cluster() first.",
                 "model_service"
             )
 
-        self._active_pipeline = ModelPipeline.load(str(path))
+        ext = fmt.lstrip('.')
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        path = self.models_dir / f"{name}.{ext}"
 
-    def list_saved_models(self) -> List[str]:
-        """List saved models."""
+        state = {
+            'model_type': model.name,
+            'model_object': model,
+        }
+        save_model_file(state, path)
+        return path
+
+    def load_unsupervised(self, name: str) -> None:
+        """
+        Load an anomaly detector or clusterer saved with
+        :meth:`save_unsupervised`.
+
+        Probes for ``.skops``, ``.joblib``, and ``.pkl`` in that order.
+        """
+        for ext in ('.skops', '.joblib', '.pkl'):
+            path = self.models_dir / f"{name}{ext}"
+            if path.exists():
+                state = load_model_file(path)
+                model_type = state.get('model_type', '')
+                obj = state['model_object']
+                if model_type in ('isolation_forest', 'one_class_svm'):
+                    self._anomaly_detector = obj
+                else:
+                    self._clusterer = obj
+                return
+        raise ServiceError(
+            f"No saved unsupervised model named '{name}' in {self.models_dir}",
+            "model_service"
+        )
+
+    def list_saved_models(self) -> List[Dict[str, str]]:
+        """
+        List all saved model files in the models directory.
+
+        Returns:
+            List of dicts with keys ``'name'``, ``'format'``, and ``'path'``.
+        """
         if not self.models_dir.exists():
             return []
 
-        return [
-            p.stem for p in self.models_dir.glob("*.joblib")
-        ]
+        results = []
+        for ext in ('.skops', '.joblib', '.pkl'):
+            for p in sorted(self.models_dir.glob(f"*{ext}")):
+                results.append({
+                    'name': p.stem,
+                    'format': ext.lstrip('.'),
+                    'path': str(p),
+                })
+        return results
