@@ -6,7 +6,7 @@ Flexible parser for CSV files with configurable options.
 """
 
 import pandas as pd
-from typing import List, Dict, Callable, Optional, Tuple
+from typing import List, Dict, Callable, Tuple
 
 from .base import BaseParser
 

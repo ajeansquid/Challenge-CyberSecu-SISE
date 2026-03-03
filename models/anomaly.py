@@ -6,13 +6,13 @@ Unsupervised anomaly detection implementations.
 """
 
 import numpy as np
-from typing import Optional, List
+from typing import List
 import joblib
 
 from sklearn.ensemble import IsolationForest
 
 from core.interfaces import AnomalyDetector as AnomalyDetectorInterface
-from core.exceptions import ModelNotFittedError, ModelError
+from core.exceptions import ModelNotFittedError
 from core.config import get_config
 
 

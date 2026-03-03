@@ -55,6 +55,44 @@ def _chat(system: str, user: str, temperature: float = 0.3) -> str:
     return response.choices[0].message.content
 
 
+def _chat_stream(system: str, user: str, temperature: float = 0.3):
+    """Stream a single system+user prompt. Yields text chunks for st.write_stream()."""
+    client = _get_client()
+    if client is None:
+        yield "⚠️ Mistral API key not configured. Add it to `.env`."
+        return
+    with client.chat.stream(
+        model=_MISTRAL_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=temperature,
+    ) as stream:
+        for chunk in stream:
+            delta = chunk.data.choices[0].delta.content
+            if delta:
+                yield delta
+
+
+def _chat_messages_stream(system: str, messages: list, temperature: float = 0.2):
+    """Stream a multi-turn conversation. `messages` is a list of {role, content} dicts."""
+    client = _get_client()
+    if client is None:
+        yield "⚠️ Mistral API key not configured. Add it to `.env`."
+        return
+    full_messages = [{"role": "system", "content": system}] + messages
+    with client.chat.stream(
+        model=_MISTRAL_MODEL,
+        messages=full_messages,
+        temperature=temperature,
+    ) as stream:
+        for chunk in stream:
+            delta = chunk.data.choices[0].delta.content
+            if delta:
+                yield delta
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -121,24 +159,23 @@ def _render_interpreter(state):
         custom_prompt = st.text_area("Your prompt", key="interp_custom")
 
     if st.button("Interpret", type="primary", key="btn_interpret"):
-        with st.spinner("Thinking…"):
-            context = _dataframe_summary(df)
-            system = textwrap.dedent("""\
-                You are a senior cybersecurity data analyst.
-                You are given summary statistics of a dataset derived from firewall logs.
-                The 11 course-standard features per source IP are:
-                total_flows (total accesses), unique_dst_ips (unique dest IPs), unique_dst_ports (unique dest ports),
-                permit, permit_low_port, permit_high_port, permit_admin,
-                deny, deny_low_port, deny_high_port, deny_admin.
-                'risk' is the binary label: positive = threat, negative = benign.
-                Provide clear, actionable analysis in Markdown. Use bullet points.
-            """)
-            if focus == "Custom prompt…":
-                user_msg = f"Dataset context:\n{context}\n\nUser request: {custom_prompt}"
-            else:
-                user_msg = f"Dataset context:\n{context}\n\nFocus: {focus}"
-            answer = _chat(system, user_msg)
-        st.markdown(answer)
+        context = _dataframe_summary(df)
+        unsup_ctx = _unsupervised_summary(state)
+        system = textwrap.dedent("""\
+            You are a senior cybersecurity data analyst.
+            You are given summary statistics of a dataset derived from firewall logs.
+            The 11 course-standard features per source IP are:
+            total_flows (total accesses), unique_dst_ips (unique dest IPs), unique_dst_ports (unique dest ports),
+            permit, permit_low_port, permit_high_port, permit_admin,
+            deny, deny_low_port, deny_high_port, deny_admin.
+            'risk' is the binary label: positive = threat, negative = benign.
+            Provide clear, actionable analysis in Markdown. Use bullet points.
+        """)
+        if focus == "Custom prompt…":
+            user_msg = f"Dataset context:\n{context}\n{unsup_ctx}\nUser request: {custom_prompt}"
+        else:
+            user_msg = f"Dataset context:\n{context}\n{unsup_ctx}\nFocus: {focus}"
+        st.write_stream(_chat_stream(system, user_msg))
 
 
 # ---------------------------------------------------------------------------
@@ -193,15 +230,15 @@ def _render_qa(state):
             st.markdown(question)
 
         with st.chat_message("assistant"):
-            with st.spinner("Generating answer…"):
-                system = _QA_SYSTEM.format(
-                    columns=list(df.columns),
-                    dtypes=df.dtypes.to_string(),
-                    head=df.head(3).to_string(),
-                )
-                raw_answer = _chat(system, question, temperature=0.2)
-
-            st.markdown(raw_answer)
+            system = _QA_SYSTEM.format(
+                columns=list(df.columns),
+                dtypes=df.dtypes.to_string(),
+                head=df.head(3).to_string(),
+            )
+            # Stream with full conversation history so the LLM remembers prior turns
+            raw_answer = st.write_stream(
+                _chat_messages_stream(system, st.session_state.qa_messages, temperature=0.2)
+            )
 
             # Try to extract and execute code
             code = _extract_code(raw_answer)
@@ -269,10 +306,8 @@ def _render_log_explainer():
         if not logs.strip():
             st.warning("Paste some log lines first.")
             return
-        with st.spinner("Analysing logs…"):
-            user_msg = f"Detail level: {depth}\n\nLogs:\n```\n{logs}\n```"
-            answer = _chat(_LOG_SYSTEM, user_msg, temperature=0.2)
-        st.markdown(answer)
+        user_msg = f"Detail level: {depth}\n\nLogs:\n```\n{logs}\n```"
+        st.write_stream(_chat_stream(_LOG_SYSTEM, user_msg, temperature=0.2))
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +344,34 @@ def _dataframe_summary(df: pd.DataFrame, max_rows: int = 5) -> str:
             buf.write(f"\n\nValue counts ({col}):\n")
             buf.write(df[col].value_counts().to_string())
 
+    return buf.getvalue()
+
+
+def _unsupervised_summary(state) -> str:
+    """Return a text summary of unsupervised ML results to inject into LLM context."""
+    if not state.has_unsupervised_results():
+        return ""
+    unsup = state.unsupervised_results
+    model_type = unsup.get('type', 'unknown')
+    result_df = unsup.get('result_df')
+    buf = io.StringIO()
+    buf.write(f"\n--- Unsupervised ML Results ({model_type}) ---\n")
+    if model_type in ('isolation_forest', 'one_class_svm') and result_df is not None:
+        if 'is_anomaly' in result_df.columns:
+            n_anomalies = result_df['is_anomaly'].sum()
+            total = len(result_df)
+            buf.write(f"Anomalies detected: {n_anomalies} / {total} IPs ({n_anomalies/total*100:.1f}%)\n")
+        if 'anomaly_score' in result_df.columns:
+            scores = result_df['anomaly_score']
+            buf.write(f"Anomaly score — mean: {scores.mean():.3f}, min: {scores.min():.3f}, max: {scores.max():.3f}\n")
+            # Top 5 most anomalous IPs
+            if 'ipsrc' in result_df.columns or result_df.index.name == 'ipsrc':
+                top5 = result_df.nsmallest(5, 'anomaly_score')
+                buf.write(f"Top 5 most anomalous IPs:\n{top5[['anomaly_score']].to_string()}\n")
+    elif model_type in ('kmeans', 'dbscan') and result_df is not None:
+        if 'cluster' in result_df.columns:
+            counts = result_df['cluster'].value_counts().sort_index()
+            buf.write(f"Cluster sizes:\n{counts.to_string()}\n")
     return buf.getvalue()
 
 

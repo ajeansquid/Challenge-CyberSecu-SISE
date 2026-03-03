@@ -5,7 +5,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pathlib import Path
 
 from app.state import get_state
 from utils.helpers import normalize_log_columns

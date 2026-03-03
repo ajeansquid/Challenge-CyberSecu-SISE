@@ -11,7 +11,7 @@ from typing import Optional, Tuple, List, Dict, Any
 
 from core.exceptions import ValidationError, ServiceError
 from core.config import get_config
-from parsers import ParserFactory, FirewallParser
+from parsers import ParserFactory
 from utils.io import load_parquet
 
 

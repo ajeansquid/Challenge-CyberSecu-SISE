@@ -6,7 +6,7 @@ Store and manage extracted features.
 """
 
 import pandas as pd
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from pathlib import Path
 import json
 from datetime import datetime

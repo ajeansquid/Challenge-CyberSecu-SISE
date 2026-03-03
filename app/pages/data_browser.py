@@ -3,8 +3,6 @@
 
 import streamlit as st
 import pandas as pd
-from pathlib import Path
-from io import BytesIO
 
 from app.state import get_state
 from utils.helpers import normalize_log_columns

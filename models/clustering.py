@@ -13,7 +13,7 @@ import joblib
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.preprocessing import StandardScaler
 
-from core.exceptions import ModelNotFittedError, ModelError
+from core.exceptions import ModelNotFittedError
 from core.config import get_config
 
 

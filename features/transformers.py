@@ -6,8 +6,7 @@ Transform and select features for ML.
 """
 
 import pandas as pd
-import numpy as np
-from typing import List, Optional, Tuple, Union
+from typing import List
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 
 from core.exceptions import FeatureExtractionError

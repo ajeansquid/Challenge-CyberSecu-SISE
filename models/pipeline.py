@@ -8,13 +8,12 @@ End-to-end pipeline for training and prediction.
 import numpy as np
 import pandas as pd
 from typing import List, Optional, Dict, Any, Tuple
-from pathlib import Path
 
 from .io import save_model_file, load_model_file
 
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
-from core.interfaces import Classifier, PredictionResult
+from core.interfaces import PredictionResult
 from core.exceptions import ModelError, ModelNotFittedError
 from core.config import get_config
 from .registry import ModelRegistry

@@ -6,11 +6,10 @@ Implementations of classification models.
 """
 
 import numpy as np
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 import joblib
-from pathlib import Path
 
-from sklearn.tree import DecisionTreeClassifier, export_text, plot_tree
+from sklearn.tree import DecisionTreeClassifier, export_text
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC

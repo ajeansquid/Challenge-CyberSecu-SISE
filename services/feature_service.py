@@ -9,7 +9,6 @@ import pandas as pd
 from typing import List, Optional, Dict, Any
 
 from core.interfaces import FeatureSet
-from core.config import get_config
 from features import (
     CourseFeatureExtractor,
     FullFeatureExtractor,

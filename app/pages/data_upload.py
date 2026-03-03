@@ -2,7 +2,6 @@
 """Data Upload Page"""
 
 import streamlit as st
-import pandas as pd
 import tempfile
 import plotly.express as px
 

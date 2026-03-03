@@ -23,7 +23,6 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import cross_val_score, LeaveOneOut
 
-from core.interfaces import EvaluationResult
 from core.config import get_config
 
 

@@ -5,7 +5,7 @@ Parser Factory
 Factory for creating parser instances.
 """
 
-from typing import Dict, Type, Any
+from typing import Dict, Type
 
 from core.interfaces import Parser
 from core.exceptions import ConfigurationError

@@ -5,10 +5,9 @@ Model Registry
 Registry for model types with factory functionality.
 """
 
-from typing import Dict, Type, Any, List
+from typing import Dict, Any, List
 from dataclasses import dataclass
 
-from core.interfaces import Classifier, AnomalyDetector
 from core.exceptions import ConfigurationError
 
 from .classifiers import (

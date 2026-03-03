@@ -11,7 +11,6 @@ from typing import List, Optional, Tuple
 import logging
 
 from core.interfaces import FeatureExtractor, FeatureSet
-from core.config import get_config
 from .aggregators import IPAggregator, TimeAggregator, StatisticalAggregator
 from .transformers import RatioTransformer
 

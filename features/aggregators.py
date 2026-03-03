@@ -6,8 +6,7 @@ Aggregate raw log data into features grouped by various keys.
 """
 
 import pandas as pd
-import numpy as np
-from typing import List, Set, Optional, Dict, Any
+from typing import Set
 
 from core.config import get_config
 from core.exceptions import FeatureExtractionError

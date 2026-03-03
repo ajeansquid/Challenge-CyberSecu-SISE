@@ -6,7 +6,7 @@ Abstract base implementation for parsers with common functionality.
 """
 
 import pandas as pd
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 from pathlib import Path
 
 from core.interfaces import Parser
@@ -55,7 +55,7 @@ class BaseParser(Parser):
                 raise ParsingError(f"Failed to parse: {e}", source=source)
 
         raise ParsingError(
-            f"Could not parse file with any encoding",
+            "Could not parse file with any encoding",
             source=source
         )
 

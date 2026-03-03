@@ -8,14 +8,14 @@ High-level model training and prediction service.
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 
-from models.io import save_model_file, load_model_file, skops_available
+from models.io import save_model_file, load_model_file
 
 from core.interfaces import PredictionResult
 from core.config import get_config
 from core.exceptions import ServiceError
-from models import ModelRegistry, ModelPipeline, get_model
+from models import ModelRegistry, ModelPipeline
 from models.anomaly import IsolationForestModel
 from models.clustering import KMeansModel
 
