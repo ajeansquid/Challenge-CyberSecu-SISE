@@ -215,6 +215,13 @@ def _render_algo_params(algo: str, n_samples: int) -> dict:
             ["euclidean", "manhattan", "cosine"],
             key="umap_metric",
         )
+        params["reproducible"] = st.checkbox(
+            "Reproducible (fixed seed)",
+            value=False,
+            help="Fixed seed gives the same layout every run but forces single-core. "
+                 "Uncheck for faster parallel computation (layout varies slightly between runs).",
+            key="umap_reproducible",
+        )
     return params
 
 
@@ -233,6 +240,7 @@ def _compute_projection_cached(
     n_neighbors: int = 15,
     min_dist: float = 0.1,
     metric: str = "euclidean",
+    reproducible: bool = False,
 ):
     """Cached projection computation."""
     explained = None
@@ -264,7 +272,7 @@ def _compute_projection_cached(
             n_neighbors=n_neighbors,
             min_dist=min_dist,
             metric=metric,
-            random_state=42,
+            random_state=42 if reproducible else None,
         )
         coords = reducer.fit_transform(X_scaled)
     else:
@@ -293,6 +301,7 @@ def _compute_projection(df, features, algo, n_dims, params):
         n_neighbors=params.get("n_neighbors", 15),
         min_dist=params.get("min_dist", 0.1),
         metric=params.get("metric", "euclidean"),
+        reproducible=params.get("reproducible", False),
     )
 
     if error == "umap_not_installed":

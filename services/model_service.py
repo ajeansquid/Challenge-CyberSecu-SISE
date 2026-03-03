@@ -328,33 +328,49 @@ class ModelService:
             max_rows:     Cap on rows for KernelExplainer (performance).
 
         Returns:
-            shap.Explanation object, or None if shap is unavailable.
+            (shap_values, df_slice, feature_cols) tuple, or (None, error_msg) on failure.
         """
         try:
             import shap
-        except ImportError:
-            return None
+        except ImportError as _ie:
+            import sys as _sys
+            return None, f"shap import failed: {_ie} (Python: {_sys.executable})"
 
         if not self.has_fitted_anomaly_detector:
-            return None
+            return None, "No fitted anomaly detector found. Train a model first."
 
         X = df[feature_cols].values
         model = self._anomaly_detector._model
+        tree_error = None
 
         try:
             # IsolationForest supports TreeExplainer directly
             explainer = shap.TreeExplainer(model)
             shap_values = explainer.shap_values(X)
-        except Exception:
+            if hasattr(shap_values, 'values'):
+                # shap.Explanation object — extract raw ndarray
+                shap_values = shap_values.values
+            explainer_used = "TreeExplainer"
+        except Exception as exc:
+            tree_error = str(exc)
             # Fallback: KernelExplainer on a small background sample
-            bg = shap.sample(X, min(100, len(X)))
-            predict_fn = lambda x: self._anomaly_detector.score(x)  # noqa: E731
-            explainer = shap.KernelExplainer(predict_fn, bg)
-            X_sample = X[:max_rows]
-            shap_values = explainer.shap_values(X_sample)
-            df = df.iloc[:max_rows]
+            try:
+                rng = np.random.default_rng(42)
+                idx = rng.choice(len(X), size=min(100, len(X)), replace=False)
+                bg = X[idx]
+                predict_fn = lambda x: self._anomaly_detector.score(x)  # noqa: E731
+                explainer = shap.KernelExplainer(predict_fn, bg)
+                X_sample = X[:max_rows]
+                shap_values = explainer.shap_values(X_sample)
+                if hasattr(shap_values, 'values'):
+                    shap_values = shap_values.values
+                df = df.iloc[:max_rows]
+                explainer_used = f"KernelExplainer (TreeExplainer failed: {tree_error})"
+            except Exception as exc2:
+                return None, f"TreeExplainer: {tree_error} | KernelExplainer: {exc2}"
 
-        return shap_values, df[feature_cols].iloc[:len(shap_values)], feature_cols
+        shap_arr = np.asarray(shap_values)
+        return shap_arr, df[feature_cols].iloc[:len(shap_arr)], feature_cols, explainer_used
 
     def cluster(
         self,

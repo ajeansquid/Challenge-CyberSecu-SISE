@@ -275,16 +275,22 @@ def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list, state=Non
         if st.button("Compute SHAP values", key="shap_compute_btn"):
             with st.spinner("Computing SHAP values… (may take a moment for KernelExplainer)"):
                 shap_result = state.model_service.compute_shap_values(result_df, feature_cols)
-            if shap_result is None:
-                st.warning("SHAP not available — run `uv add shap` to install.")
+            # shap_result is either (shap_arr, df, cols, explainer) or (None, error_msg)
+            if shap_result[0] is None:
+                st.error(f"SHAP computation failed: {shap_result[1]}")
             else:
-                shap_values, shap_df, shap_cols = shap_result
+                shap_values, shap_df, shap_cols, explainer_used = shap_result
                 st.session_state['_shap_values'] = (shap_values, shap_df, shap_cols)
+                st.caption(f"Explainer: {explainer_used}")
 
         if '_shap_values' in st.session_state:
             shap_values, shap_df, shap_cols = st.session_state['_shap_values']
+            # shap_values already normalized to 2-D ndarray by model_service
+            shap_arr = np.asarray(shap_values)
+            if shap_arr.ndim == 3:  # safety: (outputs, rows, features) — take first output
+                shap_arr = shap_arr[0]
             # Mean absolute SHAP per feature
-            mean_abs = np.abs(shap_values).mean(axis=0)
+            mean_abs = np.abs(shap_arr).mean(axis=0)
             shap_importance = pd.DataFrame({
                 'feature': shap_cols,
                 'mean_|shap|': mean_abs,
@@ -310,14 +316,15 @@ def _show_anomaly_results(result_df: pd.DataFrame, feature_cols: list, state=Non
                     shap_long.append({
                         'IP': str(i),
                         'feature': feat,
-                        'shap_value': float(shap_values[shap_df.index.get_loc(i), j]),
+                        'shap_value': float(shap_arr[shap_df.index.get_loc(i), j]),
                         'feature_value': float(row[feat]),
                     })
             shap_long_df = pd.DataFrame(shap_long)
-            fig2 = px.strip(
+            fig2 = px.scatter(
                 shap_long_df, x='shap_value', y='feature',
                 color='feature_value',
                 color_continuous_scale='RdBu',
+                hover_data=['IP', 'feature_value'],
                 title=f'SHAP values — top {n_show} anomalies',
             )
             fig2.update_layout(yaxis={'categoryorder': 'total ascending'})
