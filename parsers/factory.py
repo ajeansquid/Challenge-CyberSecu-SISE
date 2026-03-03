@@ -9,7 +9,7 @@ from typing import Dict, Type
 
 from core.interfaces import Parser
 from core.exceptions import ConfigurationError
-from .firewall import FirewallParser
+from .firewall import FirewallParser, FirewallExportParser
 from .generic import GenericCSVParser
 from .syslog import SyslogParser
 from .kernel_firewall import KernelFirewallParser
@@ -23,6 +23,7 @@ class ParserFactory:
 
     _parsers: Dict[str, Type[Parser]] = {
         "firewall": FirewallParser,
+        "firewall_export": FirewallExportParser,
         "csv": GenericCSVParser,
         "syslog": SyslogParser,
         "kernel_firewall": KernelFirewallParser,
