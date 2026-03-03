@@ -1,6 +1,6 @@
 # Parsers module - log parsing implementations
 from .base import BaseParser
-from .firewall import FirewallParser, FirewallExportParser
+from .firewall import FirewallParser, FirewallExportParser, KibanaExportParser
 from .generic import GenericCSVParser
 from .syslog import SyslogParser
 from .kernel_firewall import KernelFirewallParser
@@ -10,6 +10,7 @@ __all__ = [
     "BaseParser",
     "FirewallParser",
     "FirewallExportParser",
+    "KibanaExportParser",
     "GenericCSVParser",
     "SyslogParser",
     "KernelFirewallParser",
